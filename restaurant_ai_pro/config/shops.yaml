@@ -1,0 +1,50 @@
+shops:
+  - id: shopA
+    name: 札幌スパイス食堂
+    city: "Sapporo,JP"
+    daily_csv: "data/shopA_daily.csv"
+    menu_csv:  data/shopA/menu.csv
+    outdir: "OUTPUT/shopA"
+    coupon_url: "https://www.google.com"
+    # ★追加：7日クーポン用画像URL
+    coupon7_image: "https://misenavi-images.s3.ap-northeast-1.amazonaws.com/banners/shopA/%E3%82%B9%E3%82%AF%E3%83%AA%E3%83%BC%E3%83%B3%E3%82%B7%E3%83%A7%E3%83%83%E3%83%88+2025-11-19+231614.png"
+    # ★追加：30日クーポン用画像URL
+    coupon30_image: "https://misenavi-images.s3.ap-northeast-1.amazonaws.com/banners/shopA/%E3%82%B9%E3%82%AF%E3%83%AA%E3%83%BC%E3%83%B3%E3%82%B7%E3%83%A7%E3%83%83%E3%83%88+2025-11-19+231614.png"
+    env_file: ".env.shopA"
+    coupon_after_7days: "🎉1週間ありがとう！ こちらクーポンです"
+    coupon_after_30days: "✨1ヶ月ありがとう！ 次回割引どうぞ"
+    threshold: 1.60
+    broadcast: true         # 本配信OKのタイミングで true に
+    cooldown_hours: 0      # 同日重複配信を抑止
+    tel: "011-206-9779"
+    address: "札幌市中央区南5条西2丁目8-10 氷雪ビル1F"
+    hours: "17:00〜24:00（L.O.23:30）"
+    style: "high_tension"
+    reserve_url: "https://www.tablecheck.com/shops/shabushabu-letus-susukino/reserve"
+    
+    # === MEO設定 ===
+    meo:
+      enabled: true
+      google_place_id: "AIzaSyBOntQ72RwQPJmXry41V5iXH1bFS7lVXFI"  # Google Place ID
+      gmb_location_id: "accounts/123456789/locations/987654321"
+      target_keywords:
+        - "南平岸 カレー"
+        - "札幌 スパイスカレー"
+      auto_post: true          # 自動投稿ON/OFF
+      auto_review_reply: true  # 口コミ自動返信ON/OFF
+      auto_photo: true         # 写真自動投稿ON/OFF
+  
+
+  - id: shopB
+    name: 北12条カレー
+    city: "Sapporo,JP"
+    daily_csv: "data/shopB_daily.csv"
+    menu_csv:  data/shopA/menu.csv
+    outdir: "OUTPUT/shopB"
+    env_file: ".env.shopB"
+    coupon7_image: "https://misenavi-images.s3.ap-northeast-1.amazonaws.com/banners/shopB/coupon7.png"
+    coupon30_image: "https://misenavi-images.s3.ap-northeast-1.amazonaws.com/banners/shopB/coupon30.png"
+    coupon_url: "https://lin.ee/shopB"
+    threshold: 0.90
+    broadcast: false        # 検証中は false（recipients で安全テスト）
+    cooldown_hours: 24

@@ -1,0 +1,20 @@
+shops:
+  - id: shopA
+    name: 札幌スパイス食堂
+    city: "Sapporo,JP"
+    daily_csv: "data/shopA_daily.csv"
+    outdir: "OUTPUT/shopA"
+    coupon_url: "https://lin.ee/shopA"
+    threshold: 1.60
+    broadcast: true         # 本配信OKのタイミングで true に
+    cooldown_hours: 48     # 同日重複配信を抑止
+
+  - id: shopB
+    name: 北12条カレー
+    city: "Sapporo,JP"
+    daily_csv: "data/shopB_daily.csv"
+    outdir: "OUTPUT/shopB"
+    coupon_url: "https://lin.ee/shopB"
+    threshold: 0.90
+    broadcast: false        # 検証中は false（recipients で安全テスト）
+    cooldown_hours: 24
