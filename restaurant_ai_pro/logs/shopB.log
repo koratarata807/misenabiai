@@ -1,0 +1,42 @@
+
+[2025-11-12T03:45:33] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-14T00:27:02] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-14T01:43:11] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-15T02:45:58] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-15T04:51:39] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (weekly limits / conditions).
+
+EXIT=0
+
+[2025-11-15T23:42:35] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (weekly limits / conditions).
+
+EXIT=0
+
+[2025-11-15T23:45:36] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (weekly limits / conditions).
+
+EXIT=0

@@ -1,0 +1,262 @@
+
+[2025-11-12T03:45:26] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 0.95 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 409, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 312, in main
+    daily = load_daily(args.daily_csv)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 74, in load_daily
+    df = pd.read_csv(csv_path)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/util/_decorators.py", line 311, in wrapper
+    return func(*args, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 678, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 581, in _read
+    return parser.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1253, in read
+    index, columns, col_dict = self._engine.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 225, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "pandas/_libs/parsers.pyx", line 805, in pandas._libs.parsers.TextReader.read_low_memory
+  File "pandas/_libs/parsers.pyx", line 861, in pandas._libs.parsers.TextReader._read_rows
+  File "pandas/_libs/parsers.pyx", line 847, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "pandas/_libs/parsers.pyx", line 1960, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 5 fields in line 11, saw 7
+
+
+EXIT=1
+
+[2025-11-12T03:52:59] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 0.95 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 409, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 312, in main
+    daily = load_daily(args.daily_csv)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 74, in load_daily
+    df = pd.read_csv(csv_path)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/util/_decorators.py", line 311, in wrapper
+    return func(*args, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 678, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 581, in _read
+    return parser.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1253, in read
+    index, columns, col_dict = self._engine.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 225, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "pandas/_libs/parsers.pyx", line 805, in pandas._libs.parsers.TextReader.read_low_memory
+  File "pandas/_libs/parsers.pyx", line 861, in pandas._libs.parsers.TextReader._read_rows
+  File "pandas/_libs/parsers.pyx", line 847, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "pandas/_libs/parsers.pyx", line 1960, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 5 fields in line 11, saw 7
+
+
+EXIT=1
+
+[2025-11-12T03:53:36] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 0.95 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 409, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 312, in main
+    daily = load_daily(args.daily_csv)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 74, in load_daily
+    df = pd.read_csv(csv_path)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/util/_decorators.py", line 311, in wrapper
+    return func(*args, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 678, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 581, in _read
+    return parser.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1253, in read
+    index, columns, col_dict = self._engine.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 225, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "pandas/_libs/parsers.pyx", line 805, in pandas._libs.parsers.TextReader.read_low_memory
+  File "pandas/_libs/parsers.pyx", line 861, in pandas._libs.parsers.TextReader._read_rows
+  File "pandas/_libs/parsers.pyx", line 847, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "pandas/_libs/parsers.pyx", line 1960, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 5 fields in line 11, saw 7
+
+
+EXIT=1
+
+[2025-11-12T04:11:34] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 0.95 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 409, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 312, in main
+    daily = load_daily(args.daily_csv)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 74, in load_daily
+    df = pd.read_csv(csv_path)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/util/_decorators.py", line 311, in wrapper
+    return func(*args, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 678, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 581, in _read
+    return parser.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1253, in read
+    index, columns, col_dict = self._engine.read(nrows)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 225, in read
+    chunks = self._reader.read_low_memory(nrows)
+  File "pandas/_libs/parsers.pyx", line 805, in pandas._libs.parsers.TextReader.read_low_memory
+  File "pandas/_libs/parsers.pyx", line 861, in pandas._libs.parsers.TextReader._read_rows
+  File "pandas/_libs/parsers.pyx", line 847, in pandas._libs.parsers.TextReader._tokenize_rows
+  File "pandas/_libs/parsers.pyx", line 1960, in pandas._libs.parsers.raise_parser_error
+pandas.errors.ParserError: Error tokenizing data. C error: Expected 5 fields in line 11, saw 7
+
+
+EXIT=1
+
+[2025-11-12T04:36:05] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 0.95 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-12T04:45:14] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.1 --cooldown_hours 0 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 409, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 400, in main
+    ok, fail, mode = send_text_all_modes(campaign, args.enable_broadcast, recipients)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 245, in send_text_all_modes
+    ok, fail = send_broadcast(text)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 209, in send_broadcast
+    r = requests.post(LINE_BROADCAST_API, headers=headers, json=payload, timeout=10)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/api.py", line 115, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/sessions.py", line 573, in request
+    prep = self.prepare_request(req)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/sessions.py", line 484, in prepare_request
+    p.prepare(
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/models.py", line 369, in prepare
+    self.prepare_headers(headers)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/models.py", line 491, in prepare_headers
+    check_header_validity(header)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/utils.py", line 1043, in check_header_validity
+    _validate_header_part(value, "value", HEADER_VALIDATORS[type(value)][1])
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/utils.py", line 1048, in _validate_header_part
+    raise InvalidHeader(
+requests.exceptions.InvalidHeader: Invalid leading whitespace, reserved character(s), or returncharacter(s) in header value: 'Bearer （0O/2YYONd36OMGoGplajNB0f8kSn43Be+2uc6OEdMCKzSByEBfwGtNn/cjOwUbB7KE4DDj6OOESl8oAyxLLuH+3qFQmxwtojYPhkVmOXSCycKrD26JbkR6NDlaU2NWQXPOdah7HiTX/c0xaf9VS+jQdB04t89/1O/w1cDnyilFU=\nOPENWEATHER_KEY=1136859c9e812e5d80dcf4939b6a7ca6）'
+
+EXIT=1
+
+[2025-11-13T23:42:26] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.1 --cooldown_hours 0 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-14T00:26:31] RUN shopA
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.1 --cooldown_hours 0 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connection.py", line 174, in _new_conn
+    conn = connection.create_connection(
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/util/connection.py", line 95, in create_connection
+    raise err
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/util/connection.py", line 85, in create_connection
+    sock.connect(sa)
+OSError: [Errno 101] Network is unreachable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connectionpool.py", line 703, in urlopen
+    httplib_response = self._make_request(
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connectionpool.py", line 386, in _make_request
+    self._validate_conn(conn)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connectionpool.py", line 1042, in _validate_conn
+    conn.connect()
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connection.py", line 358, in connect
+    self.sock = conn = self._new_conn()
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connection.py", line 186, in _new_conn
+    raise NewConnectionError(
+urllib3.exceptions.NewConnectionError: <urllib3.connection.HTTPSConnection object at 0x7f15aa771340>: Failed to establish a new connection: [Errno 101] Network is unreachable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/adapters.py", line 489, in send
+    resp = conn.urlopen(
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    retries = retries.increment(
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/urllib3/util/retry.py", line 592, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.line.me', port=443): Max retries exceeded with url: /v2/bot/message/broadcast (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x7f15aa771340>: Failed to establish a new connection: [Errno 101] Network is unreachable'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 411, in <module>
+    main()
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 402, in main
+    ok, fail, mode = send_text_all_modes(campaign, args.enable_broadcast, recipients)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 245, in send_text_all_modes
+    ok, fail = send_broadcast(text)
+  File "/mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 209, in send_broadcast
+    r = requests.post(LINE_BROADCAST_API, headers=headers, json=payload, timeout=10)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/api.py", line 115, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/sessions.py", line 587, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/sessions.py", line 701, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/hayato/anaconda3/lib/python3.9/site-packages/requests/adapters.py", line 565, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.line.me', port=443): Max retries exceeded with url: /v2/bot/message/broadcast (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x7f15aa771340>: Failed to establish a new connection: [Errno 101] Network is unreachable'))
+
+EXIT=1
+
+[2025-11-14T01:54:54] RUN shopA
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.1 --cooldown_hours 0 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 21, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+
+EXIT=1
+
+[2025-11-15T02:15:51] RUN shopA
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.6 --cooldown_hours 48 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 21, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+
+EXIT=1
+
+[2025-11-15T02:25:54] RUN shopA
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopA_daily.csv --outdir OUTPUT/shopA --city Sapporo,JP --coupon_url https://lin.ee/shopA --threshold 1.6 --cooldown_hours 48 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopA --only_coupon --enable_broadcast
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 28, in <module>
+    import matplotlib
+ModuleNotFoundError: No module named 'matplotlib'
+
+EXIT=1

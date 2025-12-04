@@ -1,0 +1,45 @@
+
+[2025-11-12T03:45:33] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-14T00:27:02] RUN shopB
+CMD: /home/hayato/anaconda3/bin/python3 /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/hayato/Downloads/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+[INFO] campaign not triggered (conditions not met or weekly mode).
+
+EXIT=0
+
+[2025-11-14T01:54:54] RUN shopB
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 21, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+
+EXIT=1
+
+[2025-11-15T02:15:52] RUN shopB
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 21, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'
+
+EXIT=1
+
+[2025-11-15T02:25:55] RUN shopB
+CMD: /home/haya5/miniconda3/bin/python3 /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py --daily_csv data/shopB_daily.csv --outdir OUTPUT/shopB --city Sapporo,JP --coupon_url https://lin.ee/shopB --threshold 0.9 --cooldown_hours 24 --state_dir /mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/.state/shopB --only_coupon
+
+[STDERR]
+Traceback (most recent call last):
+  File "/mnt/c/Users/haya5/Downloads/restaurant_ai_pro/restaurant_ai_pro/restaurant_ai_pro/bin/ai2_weekly_line_campaign.py", line 28, in <module>
+    import matplotlib
+ModuleNotFoundError: No module named 'matplotlib'
+
+EXIT=1
