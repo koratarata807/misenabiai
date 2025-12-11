@@ -11,7 +11,7 @@ import requests
 import yaml
 from dotenv import dotenv_values
 import urllib.parse  # tracking用
-
+from supabase import create_client, Client
 # ===== 基本設定 =====
 
 JST = timezone(timedelta(hours=9))
@@ -24,6 +24,15 @@ LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 
 # ★ Vercel の tracking API のベースURL（今回の本番）
 TRACKING_BASE = "https://misenavi-tracking-rbsey36xe-haya5050akibahu-6610s-projects.vercel.app/api/coupon/redirect"
+# ===== Supabase クライアント =====
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")  # service_role のキー推奨
+
+supabase: Optional[Client] = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+else:
+    print("[WARN] SUPABASE_URL または SUPABASE_SERVICE_KEY が未設定のため、coupon_send_logs への保存はスキップします")
 
 
 
@@ -261,6 +270,19 @@ def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest_url: s
         f"&dest={encoded_dest}"
     )
 
+def insert_coupon_send_logs(logs: List[Dict]) -> None:
+    """coupon_send_logs にまとめてINSERT"""
+    if not logs:
+        return
+    if supabase is None:
+        print("[WARN] Supabaseクライアント未初期化のため coupon_send_logs への保存をスキップ")
+        return
+
+    try:
+        supabase.table("coupon_send_logs").insert(logs).execute()
+        print(f"[INFO] coupon_send_logs に {len(logs)} 行を保存しました")
+    except Exception as e:
+        print(f"[ERROR] coupon_send_logs へのINSERTに失敗: {e}")
 
 # ===== 判定ロジック =====
 
@@ -294,6 +316,9 @@ def needs_30day_coupon(user: Dict, now: datetime) -> bool:
 
 def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
     print("\n[INFO] === shop: {} ({}) ===".format(shop_id, shop_conf.get("name")))
+    sent7 = 0
+    sent30 = 0
+    send_logs: List[Dict] = []   # ← これを追加
 
     url7 = shop_conf.get("coupon7_image")
     url30 = shop_conf.get("coupon30_image")
@@ -317,6 +342,7 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
 
     sent7 = 0
     sent30 = 0
+    send_logs: List[Dict] = []  # ← ここでログ用リストを初期化
 
     for user in users:
         uid = user.get("user_id")
@@ -342,6 +368,14 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
             if ok:
                 user["coupon7_sent_at"] = format_date(now)
                 sent7 += 1
+                send_logs.append(
+                    {
+                        "shop_id": shop_id,
+                        "user_id": uid,
+                        "coupon_type": "7days",
+                        "sent_at": now.astimezone(timezone.utc).isoformat(),
+                    }
+                )
 
         # 30日クーポン
         if needs_30day_coupon(user, now):
@@ -360,10 +394,28 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
             if ok:
                 user["coupon30_sent_at"] = format_date(now)
                 sent30 += 1
+                send_logs.append(
+                    {
+                        "shop_id": shop_id,
+                        "user_id": uid,
+                        "coupon_type": "30days",
+                        "sent_at": now.astimezone(timezone.utc).isoformat(),
+                    }
+                )
+
+    # ここで送付ログをSupabaseにまとめて保存
+    if send_logs:
+        insert_coupon_send_logs(send_logs)
 
     save_users(shop_conf, users)
     print("[INFO] {}: 7日={}件 / 30日={}件".format(shop_id, sent7, sent30))
 
+    # ここで送付ログをSupabaseに保存
+    if send_logs:
+        insert_coupon_send_logs(send_logs)
+
+    save_users(shop_conf, users)
+    print("[INFO] {}: 7日={}件 / 30日={}件".format(shop_id, sent7, sent30))
 
 # ===== メイン =====
 
