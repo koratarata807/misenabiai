@@ -139,24 +139,39 @@ def save_users(shop_conf: Dict, users: List[Dict]) -> None:
 # ===== LINE 送信 =====
 
 def load_line_token(shop_conf: Dict) -> Optional[str]:
-    """店舗ごとの .env から LINE トークン取得"""
+    """
+    優先順位：
+      1) shops.yaml の line_token_env に指定された環境変数
+      2) 従来の env_file (.env) から LINE_CHANNEL_ACCESS_TOKEN を読む
+    """
+
+    # ===== (1) Vercel / 環境変数方式 =====
+    env_key = shop_conf.get("line_token_env")
+    if env_key:
+        token = os.getenv(env_key)
+        if token:
+            return token
+        print(f"[WARN] 環境変数 {env_key} が未設定（fallbackで env_file を試します）", file=sys.stderr)
+
+    # ===== (2) 従来の .env ファイル方式（後方互換） =====
     env_file = shop_conf.get("env_file")
     if not env_file:
-        print("[ERROR] env_file 未設定 (shop_id={})".format(shop_conf.get("id")), file=sys.stderr)
+        print("[ERROR] line_token_env も env_file も未設定", file=sys.stderr)
         return None
 
     env_path = CONFIG_DIR / env_file
     if not env_path.exists():
-        print("[ERROR] env_file 不在: {}".format(env_path), file=sys.stderr)
+        print(f"[ERROR] env_file 不在: {env_path}", file=sys.stderr)
         return None
 
     env_dict = dotenv_values(env_path)
     token = env_dict.get("LINE_CHANNEL_ACCESS_TOKEN")
     if not token:
-        print("[ERROR] LINE_CHANNEL_ACCESS_TOKEN がありません: {}".format(env_path), file=sys.stderr)
+        print(f"[ERROR] LINE_CHANNEL_ACCESS_TOKEN がありません: {env_path}", file=sys.stderr)
         return None
 
     return token
+
 
 
 def send_coupon_message(token: str, user_id: str, text: str, image_url: str) -> bool:
@@ -404,13 +419,6 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
                 )
 
     # ここで送付ログをSupabaseにまとめて保存
-    if send_logs:
-        insert_coupon_send_logs(send_logs)
-
-    save_users(shop_conf, users)
-    print("[INFO] {}: 7日={}件 / 30日={}件".format(shop_id, sent7, sent30))
-
-    # ここで送付ログをSupabaseに保存
     if send_logs:
         insert_coupon_send_logs(send_logs)
 
