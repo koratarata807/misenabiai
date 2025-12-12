@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "api/daily_coupon_job.py": {
-      "runtime": "python3.11"
-    }
-  },
   "crons": [
     {
       "path": "/api/daily_coupon_job",
