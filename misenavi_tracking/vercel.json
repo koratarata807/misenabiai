@@ -1,8 +1,14 @@
 {
+  "functions": {
+    "api/daily_coupon_job.py": {
+      "runtime": "python3.11"
+    }
+  },
   "crons": [
     {
-      "path": "/api/daily-coupon-job",
-      "schedule": "0 10 * * *"
+      "path": "/api/daily_coupon_job",
+      "schedule": "0 1 0* * *"
     }
   ]
 }
+
