@@ -2,29 +2,27 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
 // ===== Supabase =====
+// ※ Vercel には service_role を入れる（流出厳禁）
+// 環境変数名は SUPABASE_SERVICE_ROLE_KEY に統一
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY   // Vercel には service_role を入れておくのがおすすめ
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // ===== Storage bucket =====
 const BUCKET = "tracking-logs";
 
-// ===== 店舗ごとの CSV ファイル名 =====
-function csvFileForShop(shop_id) {
-  return `logs_${shop_id}.csv`;   // logs_shopA.csv / logs_shopB.csv ...
+// ===== 店舗ごとの CSV ファイル名（競合を減らすため日次分割） =====
+function csvFileForShop(shop_id, yyyyMMdd) {
+  return `logs_${shop_id}_${yyyyMMdd}.csv`; // logs_shopA_20251214.csv など
 }
 
 // ===== device 判定 =====
 function detectDevice(ua = "") {
-  const u = ua.toLowerCase();
-  if (u.includes("iphone") || u.includes("android") || u.includes("mobile")) {
-    return "mobile";
-  }
+  const u = String(ua).toLowerCase();
+  if (u.includes("iphone") || u.includes("android") || u.includes("mobile")) return "mobile";
   if (u.includes("ipad")) return "tablet";
-  if (u.includes("windows") || u.includes("macintosh")) {
-    return "desktop";
-  }
+  if (u.includes("windows") || u.includes("macintosh")) return "desktop";
   return "unknown";
 }
 
@@ -34,13 +32,49 @@ function generateSessionId() {
   return crypto.randomBytes(16).toString("hex");
 }
 
+// ===== YYYYMMDD 生成（UTC基準でOK。JSTにしたいならここだけ調整） =====
+function yyyymmddUTC(d = new Date()) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
+// ===== dest ホワイトリスト（オープンリダイレクト対策） =====
+// 必要に応じて追加
+const ALLOWED_DEST_HOSTS = new Set([
+  "lin.ee",
+  "line.me",
+  // "yourdomain.com",
+]);
+
+function safeDecodeDest(dest) {
+  try {
+    return decodeURIComponent(dest);
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedDest(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    return ALLOWED_DEST_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 // ===== CSV append =====
 async function appendCsv(shop_id, record) {
-  const fileName = csvFileForShop(shop_id);
+  const day = yyyymmddUTC(new Date(record.timestamp));
+  const fileName = csvFileForShop(shop_id, day);
 
+  // shop_id もCSVに入れる（後で分析しやすい）
   const line =
     [
       record.timestamp,
+      record.shop_id,
       record.user_id,
       record.coupon_type,
       record.event_type,
@@ -48,43 +82,58 @@ async function appendCsv(shop_id, record) {
       JSON.stringify(record.user_agent).replace(/,/g, " "), // カンマ潰し
     ].join(",") + "\n";
 
-  const { data: exist } = await supabase.storage
-    .from(BUCKET)
-    .download(fileName);
+  // 既存ファイルがあれば追記、なければヘッダ付き新規
+  const { data: exist } = await supabase.storage.from(BUCKET).download(fileName);
 
   let newContent;
   if (exist) {
     const text = await exist.text();
     newContent = text + line;
   } else {
-    const header =
-      "timestamp,user_id,coupon_type,event_type,ip_hash,user_agent\n";
+    const header = "timestamp,shop_id,user_id,coupon_type,event_type,ip_hash,user_agent\n";
     newContent = header + line;
   }
 
-  await supabase.storage.from(BUCKET).upload(fileName, newContent, {
+  // upload（upsert）
+  const { error } = await supabase.storage.from(BUCKET).upload(fileName, newContent, {
     upsert: true,
     contentType: "text/csv",
   });
+  if (error) throw error;
 }
-
 
 // ===== メイン handler =====
 export default async function handler(req, res) {
-  const {
-    shop,
-    type,
-    uid,
-    dest,
-    campaign,
-    ref,
-    path,
-  } = req.query;
+  // ===== 必須パラメータ =====
+  const shop = req.query.shop;
+  const type = req.query.type;
+  const uid = req.query.uid;
+  const dest = req.query.dest;
 
+  // オプション
+  const campaign = req.query.campaign;
+  const ref = req.query.ref;
+  const path = req.query.path;
+
+  // ===== まずリダイレクト先を確定（失敗しても必ず飛ばす） =====
+  let redirectUrl = "https://google.com";
+  const decoded = dest ? safeDecodeDest(dest) : null;
+  if (decoded && isAllowedDest(decoded)) {
+    redirectUrl = decoded;
+  }
+
+  // ===== パラメータ欠損時はログだけ残してリダイレクト =====
+  // （trackingは壊さない、ユーザー体験を落とさない）
+  if (!shop || !type || !uid) {
+    console.warn("[redirect] missing query", { shop, type, uid });
+    return res.redirect(302, redirectUrl);
+  }
+
+  // ===== request 情報 =====
   const ua = req.headers["user-agent"] || "";
   const ip =
     req.headers["x-forwarded-for"] ||
-    req.socket.remoteAddress ||
+    req.socket?.remoteAddress ||
     "unknown";
 
   const ip_hash = crypto
@@ -97,30 +146,31 @@ export default async function handler(req, res) {
   const session_id = generateSessionId();
 
   const dbRecord = {
-    shop_id: shop,
-    user_id: uid,
-    coupon_type: type,
+    shop_id: String(shop),
+    user_id: String(uid),
+    coupon_type: String(type),
     event_type: "opened",
-    user_agent: ua,
+    user_agent: String(ua),
     ip_hash,
-    campaign_id: campaign || "default",
-    referrer: ref || "",
-    path: path || "",
+    campaign_id: campaign ? String(campaign) : "default",
+    referrer: ref ? String(ref) : "",
+    path: path ? String(path) : "",
     session_id,
     device_type,
+    created_at: nowIso, // テーブル側で自動なら不要だが明示してもOK
   };
 
   const csvRecord = {
     timestamp: nowIso,
-    shop_id: shop,
-    user_id: uid,
-    coupon_type: type,
+    shop_id: String(shop),
+    user_id: String(uid),
+    coupon_type: String(type),
     event_type: "opened",
-    user_agent: ua,
+    user_agent: String(ua),
     ip_hash,
   };
 
-  // ===== DB Insert =====
+  // ===== DB Insert（失敗してもリダイレクトは必ず成功させる） =====
   try {
     const { error: dbError } = await supabase
       .from("coupon_events")
@@ -133,22 +183,13 @@ export default async function handler(req, res) {
     console.error("[db insert exception]", e);
   }
 
-  // ===== CSV Append =====
+  // ===== CSV Append（失敗してもリダイレクトは必ず成功させる） =====
   try {
-    await appendCsv(shop, csvRecord);
+    await appendCsv(String(shop), csvRecord);
   } catch (e) {
     console.error("[appendCsv error]", e);
   }
 
-  // ===== リダイレクト (必ず成功させる) =====
-  let redirectUrl = "https://google.com";
-  try {
-    if (dest) {
-      redirectUrl = decodeURIComponent(dest);
-    }
-  } catch (e) {
-    console.error("[decode dest error]", e);
-  }
-
+  // ===== redirect =====
   return res.redirect(302, redirectUrl);
 }
