@@ -1,7 +1,7 @@
 # restaurant_ai_pro/bin/server.py
 import os
 from fastapi import FastAPI, Header, HTTPException
-from daily_coupon_job import main as run_daily
+from bin.daily_coupon_job import main as run_daily
 
 app = FastAPI()
 
