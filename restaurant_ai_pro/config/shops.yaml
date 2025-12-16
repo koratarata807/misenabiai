@@ -21,7 +21,7 @@ shops:
     hours: "17:00〜24:00（L.O.23:30）"
     style: "high_tension"
     reserve_url: "https://www.tablecheck.com/shops/shabushabu-letus-susukino/reserve"
-    
+    line_token_env: "LINE_TOKEN_SHOPA"    
     # === MEO設定 ===
     meo:
       enabled: true
