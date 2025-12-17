@@ -1,6 +1,9 @@
+# restaurant_ai_pro/bin/server.py
+
 import os
 import requests
-from fastapi import FastAPI, Header, HTTPException
+
+from fastapi import FastAPI, Header, HTTPException, Depends
 
 from bin.daily_coupon_job import main as run_daily
 
@@ -8,44 +11,96 @@ app = FastAPI()
 
 LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 
+
+# =========================================================
+# 認証（JOB_KEY）
+# =========================================================
+def require_job_key(
+    x_job_key: str | None = Header(default=None, alias="x-job-key")
+):
+    """
+    Cloud Run / Cron / Vercel からのジョブ実行用認証。
+    環境変数 JOB_KEY を唯一の正とする。
+    """
+    expected = os.getenv("JOB_KEY")
+
+    if not expected:
+        raise HTTPException(
+            status_code=500,
+            detail="JOB_KEY is not set in environment"
+        )
+
+    if x_job_key != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="unauthorized"
+        )
+
+
+# =========================================================
+# ヘルスチェック
+# =========================================================
 @app.get("/health")
 def health():
     return {"ok": True}
 
+
+# =========================================================
+# 本番：毎日クーポン送信ジョブ
+# =========================================================
 @app.post("/jobs/daily-coupon")
-def daily_coupon(x_job_key: str = Header(default="")):
-    if x_job_key != os.getenv("JOB_KEY"):
-        raise HTTPException(status_code=401, detail="unauthorized")
+def daily_coupon(_auth=Depends(require_job_key)):
+    """
+    毎日実行されるクーポン送信ジョブ
+    """
     run_daily()
     return {"ok": True}
 
-# ===== 追加：テスト送信（確実に1通飛ばす）=====
-@app.post("/jobs/test-line")
-def test_line(x_job_key: str = Header(default="")):
-    if x_job_key != os.getenv("JOB_KEY"):
-        raise HTTPException(status_code=401, detail="unauthorized")
 
+# =========================================================
+# テスト用：LINE に1通だけ送信
+# =========================================================
+@app.post("/jobs/test-line")
+def test_line(_auth=Depends(require_job_key)):
     token = os.getenv("LINE_TOKEN_SHOPA")
     user_id = os.getenv("TEST_LINE_USER_ID")
 
     if not token:
-        raise HTTPException(status_code=500, detail="LINE_TOKEN_SHOPA is missing")
+        raise HTTPException(
+            status_code=500,
+            detail="LINE_TOKEN_SHOPA is not set"
+        )
+
     if not user_id:
-        raise HTTPException(status_code=500, detail="TEST_LINE_USER_ID is missing")
+        raise HTTPException(
+            status_code=500,
+            detail="TEST_LINE_USER_ID is not set"
+        )
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
+
     payload = {
         "to": user_id,
         "messages": [
-            {"type": "text", "text": "✅ Cloud Run からテスト送信できました（misenavi）"}
+            {"type": "text", "text": "✅ Cloud Run からのテスト送信です"}
         ],
     }
 
-    r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers, timeout=10)
+    r = requests.post(
+        LINE_PUSH_ENDPOINT,
+        json=payload,
+        headers=headers,
+        timeout=10,
+    )
+
     if r.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"LINE push failed: {r.status_code} {r.text}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"LINE push failed: {r.text}"
+        )
 
     return {"ok": True}
+
