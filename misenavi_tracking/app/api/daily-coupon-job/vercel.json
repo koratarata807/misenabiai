@@ -1,8 +1,0 @@
-{
-  "cron": {
-    "daily-coupon-job": {
-      "schedule": "0 1 * * *",
-      "path": "/api/daily-coupon-job"
-    }
-  }
-}
