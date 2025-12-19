@@ -4,7 +4,6 @@
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
-import csv
 import os
 import sys
 import requests
@@ -12,11 +11,11 @@ import yaml
 from dotenv import dotenv_values
 import urllib.parse  # tracking用
 from supabase import create_client, Client
+
 # ===== 基本設定 =====
 
 JST = timezone(timedelta(hours=9))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
 SHOPS_YAML = CONFIG_DIR / "shops.yaml"
 
@@ -24,16 +23,20 @@ LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 
 # ★ Vercel の tracking API のベースURL（今回の本番）
 TRACKING_BASE = "https://misenavi-tracking-rbsey36xe-haya5050akibahu-6610s-projects.vercel.app/api/coupon/redirect"
-# ===== Supabase クライアント =====
+
+# ===== Supabase クライアント（DB判定の正）=====
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")  # service_role のキー推奨
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ★統一（正）
 
 supabase: Optional[Client] = None
-if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 else:
-    print("[WARN] SUPABASE_URL または SUPABASE_SERVICE_KEY が未設定のため、coupon_send_logs への保存はスキップします")
+    print("[ERROR] SUPABASE_URL または SUPABASE_SERVICE_ROLE_KEY が未設定です", file=sys.stderr)
+    sys.exit(1)
 
+def is_dry_run() -> bool:
+    return os.getenv("DRY_RUN", "0") in ("1", "true", "TRUE", "yes", "YES")
 
 
 # ===== ユーティリティ =====
@@ -43,32 +46,10 @@ def jst_now() -> datetime:
     return datetime.now(JST)
 
 
-def parse_date(date_str: str) -> Optional[datetime]:
-    """文字列を datetime に変換（空は None）"""
-    if not date_str:
-        return None
-    date_str = date_str.strip()
-    if not date_str:
-        return None
-
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=JST)
-    except ValueError:
-        return None
-
-
-def format_date(dt: Optional[datetime]) -> str:
-    """datetime → 'YYYY-MM-DD'（None の場合は ''）"""
-    if dt is None:
-        return ""
-    return dt.strftime("%Y-%m-%d")
-
-
 # ===== shops.yaml 読み込み =====
 
 def load_shops() -> Dict[str, Dict]:
     """config/shops.yaml から店舗情報を読み込む"""
-
     if not SHOPS_YAML.exists():
         print("[ERROR] shops.yaml が見つかりません", file=sys.stderr)
         return {}
@@ -86,56 +67,6 @@ def load_shops() -> Dict[str, Dict]:
     return shops
 
 
-# ===== ユーザーCSV 読み込み・書き込み =====
-
-def get_users_csv_path(shop_conf: Dict) -> Path:
-    """users_csv の実パスを取得"""
-    users_csv = shop_conf.get("users_csv")
-    if not users_csv:
-        sid = shop_conf.get("id")
-        return DATA_DIR / sid / "users.csv"
-
-    p = Path(users_csv)
-    if not p.is_absolute():
-        p = PROJECT_ROOT / p
-    return p
-
-
-def load_users(shop_conf: Dict) -> List[Dict]:
-    """CSV を list[dict] として読み込む"""
-    path = get_users_csv_path(shop_conf)
-    if not path.exists():
-        print("[WARN] users_csv が存在しません: {}".format(path), file=sys.stderr)
-        return []
-
-    users: List[Dict] = []
-    with path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            users.append(row)
-
-    return users
-
-
-def save_users(shop_conf: Dict, users: List[Dict]) -> None:
-    """CSV に書き戻す"""
-    path = get_users_csv_path(shop_conf)
-
-    if not users:
-        print("[INFO] {} ユーザー0件のため保存スキップ".format(shop_conf.get("id")))
-        return
-
-    fieldnames = list(users[0].keys())
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(users)
-
-    print("[INFO] 保存完了: {}".format(path))
-
-
 # ===== LINE 送信 =====
 
 def load_line_token(shop_conf: Dict) -> Optional[str]:
@@ -144,8 +75,7 @@ def load_line_token(shop_conf: Dict) -> Optional[str]:
       1) shops.yaml の line_token_env に指定された環境変数
       2) 従来の env_file (.env) から LINE_CHANNEL_ACCESS_TOKEN を読む
     """
-
-    # ===== (1) Vercel / 環境変数方式 =====
+    # ===== (1) 環境変数方式 =====
     env_key = shop_conf.get("line_token_env")
     if env_key:
         token = os.getenv(env_key)
@@ -153,7 +83,7 @@ def load_line_token(shop_conf: Dict) -> Optional[str]:
             return token
         print(f"[WARN] 環境変数 {env_key} が未設定（fallbackで env_file を試します）", file=sys.stderr)
 
-    # ===== (2) 従来の .env ファイル方式（後方互換） =====
+    # ===== (2) 従来の .env ファイル方式（後方互換）=====
     env_file = shop_conf.get("env_file")
     if not env_file:
         print("[ERROR] line_token_env も env_file も未設定", file=sys.stderr)
@@ -171,7 +101,6 @@ def load_line_token(shop_conf: Dict) -> Optional[str]:
         return None
 
     return token
-
 
 
 def send_coupon_message(token: str, user_id: str, text: str, image_url: str) -> bool:
@@ -215,7 +144,6 @@ def send_coupon_flex_message(
     coupon_url: str,
 ) -> bool:
     """画像タップでクーポンURLに飛ぶ Flex メッセージを送信"""
-
     headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer {}".format(token),
@@ -285,145 +213,121 @@ def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest_url: s
         f"&dest={encoded_dest}"
     )
 
+
+# ===== DBアクセス（判定/更新/ログ）=====
+
+def fetch_7day_targets_from_db(shop_id: str, limit: int = 5000) -> List[Dict]:
+    """
+    送付対象：public.users の coupon7_sent_at is null
+    返却：[{user_id, display_name}, ...]
+    """
+    res = (
+        supabase.table("users")
+        .select("user_id,display_name")
+        .eq("shop_id", shop_id)
+        .is_("coupon7_sent_at", "null")
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+def mark_7day_sent_in_db(shop_id: str, user_id: str, sent_at_utc_iso: str) -> None:
+    """送信成功後：coupon7_sent_at を DB に反映"""
+    supabase.table("users").update(
+        {"coupon7_sent_at": sent_at_utc_iso}
+    ).eq("shop_id", shop_id).eq("user_id", user_id).execute()
+
+
 def insert_coupon_send_logs(logs: List[Dict]) -> None:
-    """coupon_send_logs にまとめてINSERT"""
+    """coupon_send_logs にまとめてINSERT（監査ログ：現状維持）"""
     if not logs:
         return
-    if supabase is None:
-        print("[WARN] Supabaseクライアント未初期化のため coupon_send_logs への保存をスキップ")
-        return
-
     try:
         supabase.table("coupon_send_logs").insert(logs).execute()
         print(f"[INFO] coupon_send_logs に {len(logs)} 行を保存しました")
     except Exception as e:
         print(f"[ERROR] coupon_send_logs へのINSERTに失敗: {e}")
 
-# ===== 判定ロジック =====
 
-def needs_7day_coupon(user: Dict, now: datetime) -> bool:
-    reg = parse_date(user.get("registered_at", ""))
-    sent = parse_date(user.get("coupon7_sent_at", ""))
-
-    if reg is None:
-        return False
-    if sent is not None:
-        return False
-
-    days = (now.date() - reg.date()).days
-    return days >= 7
-
-
-def needs_30day_coupon(user: Dict, now: datetime) -> bool:
-    reg = parse_date(user.get("registered_at", ""))
-    sent = parse_date(user.get("coupon30_sent_at", ""))
-
-    if reg is None:
-        return False
-    if sent is not None:
-        return False
-
-    days = (now.date() - reg.date()).days
-    return days >= 30
-
-
-# ===== 店舗処理 =====
+# ===== 店舗処理（7daysのみDB判定）=====
 
 def run_for_shop(shop_id: str, shop_conf: Dict, now: datetime) -> None:
     print("\n[INFO] === shop: {} ({}) ===".format(shop_id, shop_conf.get("name")))
     sent7 = 0
-    sent30 = 0
-    send_logs: List[Dict] = []   # ← これを追加
+    send_logs: List[Dict] = []
 
     url7 = shop_conf.get("coupon7_image")
-    url30 = shop_conf.get("coupon30_image")
     coupon_url = shop_conf.get("coupon_url")  # 素の lin.ee など
 
-    if not url7 or not url30:
-        print("[ERROR] coupon image URL 未設定 (shop_id={})".format(shop_id))
+    if not url7:
+        print("[ERROR] coupon7_image URL 未設定 (shop_id={})".format(shop_id))
         return
 
     token = load_line_token(shop_conf)
     if not token:
         return
 
-    users = load_users(shop_conf)
-    if not users:
-        print("[INFO] ユーザーCSVなし → スキップ")
+    msg7_template = shop_conf.get("coupon_after_7days")
+
+    # ===== DB から送付対象を取得 =====
+    targets = fetch_7day_targets_from_db(shop_id)
+    target_ids = [t.get("user_id") for t in targets if t.get("user_id")]
+
+    print(f"[INFO] 7days targets(DB): {len(target_ids)}")
+    if target_ids:
+        print("[INFO] targets(sample):", target_ids[:20])
+
+    # ===== DRY_RUN =====
+    if is_dry_run():
+        print("[INFO] DRY_RUN=1 のため送信・更新は実行しません")
         return
 
-    msg7_template = shop_conf.get("coupon_after_7days")
-    msg30_template = shop_conf.get("coupon_after_30days")
-
-    sent7 = 0
-    sent30 = 0
-    send_logs: List[Dict] = []  # ← ここでログ用リストを初期化
-
-    for user in users:
-        uid = user.get("user_id")
-        name = user.get("display_name", "")
+    # ===== 送信 =====
+    for t in targets:
+        uid = t.get("user_id")
+        name = (t.get("display_name") or "").strip()
 
         if not uid:
             continue
 
-        # 7日クーポン
-        if needs_7day_coupon(user, now):
-            if msg7_template:
-                text7 = msg7_template.format(name=name, display_name=name)
-            else:
-                text7 = "{} さん、登録1週間記念のクーポンです。".format(name)
+        if msg7_template:
+            text7 = msg7_template.format(name=name, display_name=name)
+        else:
+            text7 = "{} さん、登録1週間記念のクーポンです。".format(name)
 
-            if coupon_url:
-                # tracking URL に差し替え（coupon_type=7days）
-                tracking_url = build_tracking_url(shop_id, "7days", uid, coupon_url)
-                ok = send_coupon_flex_message(token, uid, text7, url7, tracking_url)
-            else:
-                ok = send_coupon_message(token, uid, text7, url7)
+        if coupon_url:
+            tracking_url = build_tracking_url(shop_id, "7days", uid, coupon_url)
+            ok = send_coupon_flex_message(token, uid, text7, url7, tracking_url)
+        else:
+            ok = send_coupon_message(token, uid, text7, url7)
 
-            if ok:
-                user["coupon7_sent_at"] = format_date(now)
-                sent7 += 1
-                send_logs.append(
-                    {
-                        "shop_id": shop_id,
-                        "user_id": uid,
-                        "coupon_type": "7days",
-                        "sent_at": now.astimezone(timezone.utc).isoformat(),
-                    }
-                )
+        if ok:
+            sent7 += 1
+            sent_at_utc_iso = now.astimezone(timezone.utc).isoformat()
 
-        # 30日クーポン
-        if needs_30day_coupon(user, now):
-            if msg30_template:
-                text30 = msg30_template.format(name=name, display_name=name)
-            else:
-                text30 = "{} さん、登録1ヶ月記念のクーポンです。".format(name)
+            # ★ DB更新（重複送信防止の本丸）
+            try:
+                mark_7day_sent_in_db(shop_id, uid, sent_at_utc_iso)
+            except Exception as e:
+                print(f"[ERROR] users.coupon7_sent_at 更新失敗 shop={shop_id} uid={uid} err={e}")
 
-            if coupon_url:
-                # tracking URL に差し替え（coupon_type=30days）
-                tracking_url = build_tracking_url(shop_id, "30days", uid, coupon_url)
-                ok = send_coupon_flex_message(token, uid, text30, url30, tracking_url)
-            else:
-                ok = send_coupon_message(token, uid, text30, url30)
+            # 監査ログ（現状維持）
+            send_logs.append(
+                {
+                    "shop_id": shop_id,
+                    "user_id": uid,
+                    "coupon_type": "7days",
+                    "sent_at": sent_at_utc_iso,
+                }
+            )
 
-            if ok:
-                user["coupon30_sent_at"] = format_date(now)
-                sent30 += 1
-                send_logs.append(
-                    {
-                        "shop_id": shop_id,
-                        "user_id": uid,
-                        "coupon_type": "30days",
-                        "sent_at": now.astimezone(timezone.utc).isoformat(),
-                    }
-                )
-
-    # ここで送付ログをSupabaseにまとめて保存
+    # 送付ログをSupabaseにまとめて保存
     if send_logs:
         insert_coupon_send_logs(send_logs)
 
-    save_users(shop_conf, users)
-    print("[INFO] {}: 7日={}件 / 30日={}件".format(shop_id, sent7, sent30))
+    print("[INFO] {}: 7日={}件".format(shop_id, sent7))
+
 
 # ===== メイン =====
 

@@ -7,6 +7,9 @@ from fastapi import FastAPI, Header, HTTPException, Depends
 
 from bin.daily_coupon_job import main as run_daily
 
+print("### BOOT: bin/server.py loaded (rev-check) ###")
+print("### BOOT JOB_KEY env set? =>", "YES" if os.getenv("JOB_KEY") else "NO", "###")
+
 app = FastAPI()
 
 LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
@@ -19,22 +22,21 @@ def require_job_key(
     x_job_key: str | None = Header(default=None, alias="x-job-key")
 ):
     """
-    Cloud Run / Cron / Vercel からのジョブ実行用認証。
+    Cloud Run / Cron / Vercel から からのジョブ実行用認証。
     環境変数 JOB_KEY を唯一の正とする。
     """
+
+def require_job_key(x_job_key: str | None = Header(default=None, alias="x-job-key")):
     expected = os.getenv("JOB_KEY")
 
-    if not expected:
-        raise HTTPException(
-            status_code=500,
-            detail="JOB_KEY is not set in environment"
-        )
+    # デバッグ（短期）
+    print(f"### AUTH DEBUG got={x_job_key!r} expected={expected!r} ###")
 
+    if not expected:
+        raise HTTPException(status_code=500, detail="JOB_KEY is not set")
     if x_job_key != expected:
-        raise HTTPException(
-            status_code=401,
-            detail="unauthorized"
-        )
+        raise HTTPException(status_code=401, detail=f"unauthorized got={x_job_key!r}")
+
 
 
 # =========================================================
