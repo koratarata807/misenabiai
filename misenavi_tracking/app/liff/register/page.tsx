@@ -85,4 +85,27 @@ export default function LiffRegisterPage() {
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto" }}>
-      <h1 style={{ fontSize: 18, mar
+      <h1 style={{ fontSize: 18, marginBottom: 8 }}>LINE 登録</h1>
+      <p style={{ marginBottom: 12 }}>店舗: <b>{shopId || "(未指定)"}</b></p>
+
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 16,
+          maxWidth: 520,
+        }}
+      >
+        <p style={{ margin: 0 }}>{status.message}</p>
+
+        {status.phase === "error" && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: 0 }}>
+              URL例：<code>?shop=shopA</code> を付けて開いてください。
+            </p>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
