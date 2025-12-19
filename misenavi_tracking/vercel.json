@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/daily-coupon-job",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
