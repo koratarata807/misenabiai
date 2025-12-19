@@ -36,11 +36,15 @@ export default function LiffRegisterClient() {
         await liff.init({ liffId });
 
         // ログインしていない場合はLINEログインへ
-        if (!liff.isLoggedIn()) {
-          setStatus({ phase: "working", message: "ログイン中…" });
-          liff.login(); // リダイレクトされるのでここで return
-          return;
-        }
+      if (!liff.isLoggedIn()) {
+         setStatus({ phase: "working", message: "ログイン中…" });
+
+         // ★ ここが③の本丸：shop付きURLを維持してログイン
+         const redirectUri = window.location.href; // 例: .../liff/register?shop=shopA
+         liff.login({ redirectUri });
+           return;
+         }
+
 
         setStatus({ phase: "working", message: "プロフィール取得中…" });
         const profile = await liff.getProfile();
