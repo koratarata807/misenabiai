@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const sb = supabaseServer();
+    const sb = supabaseServer;
 
     // ① user_id で既存ユーザーを取得（あなたの制約が user_id unique なのでこれが正）
     const { data: existing, error: selErr } = await sb
