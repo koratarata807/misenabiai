@@ -3,6 +3,18 @@
 import os
 import requests
 from fastapi import FastAPI, Header, HTTPException, Depends
+import inspect, os, hashlib
+
+print(f"[RUNTIME] run_daily module={run_daily.__module__}", flush=True)
+print(f"[RUNTIME] run_daily file={inspect.getsourcefile(run_daily)}", flush=True)
+
+try:
+    p = inspect.getsourcefile(run_daily)
+    if p and os.path.exists(p):
+        b = open(p, "rb").read()
+        print(f"[RUNTIME] run_daily sha256={hashlib.sha256(b).hexdigest()}", flush=True)
+except Exception as e:
+    print(f"[RUNTIME] fingerprint error: {e}", flush=True)
 
 from bin.daily_coupon_job import main as run_daily
 
