@@ -12,7 +12,9 @@ from dotenv import dotenv_values
 import urllib.parse
 from supabase import create_client, Client
 
-# ===== 基本設定 =====
+# =========================================================
+# 基本設定
+# =========================================================
 
 JST = timezone(timedelta(hours=9))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +28,9 @@ TRACKING_BASE = (
     "/api/coupon/redirect"
 )
 
-# ===== Supabase（前のやり方 그대로）=====
+# =========================================================
+# Supabase（前のやり方 그대로）
+# =========================================================
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -46,7 +50,9 @@ def jst_now() -> datetime:
     return datetime.now(JST)
 
 
-# ===== shops.yaml =====
+# =========================================================
+# shops.yaml
+# =========================================================
 
 def load_shops() -> Dict[str, Dict]:
     if not SHOPS_YAML.exists():
@@ -64,7 +70,9 @@ def load_shops() -> Dict[str, Dict]:
     return shops
 
 
-# ===== LINE（前のやり方 그대로）=====
+# =========================================================
+# LINE（前のやり方 그대로）
+# =========================================================
 
 def load_line_token(shop_conf: Dict) -> Optional[str]:
     """
@@ -102,13 +110,17 @@ def send_coupon_message(token: str, user_id: str, text: str, image_url: str) -> 
         "to": user_id,
         "messages": [
             {"type": "text", "text": text},
-            {"type": "image", "originalContentUrl": image_url, "previewImageUrl": image_url},
+            {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            },
         ],
     }
 
-    r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers)
+    r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers, timeout=10)
     if r.status_code != 200:
-        print(f"[ERROR] LINE push failed uid={user_id} status={r.status_code} body={r.text}")
+        print(f"[ERROR] LINE push failed uid={user_id} status={r.status_code} body={r.text}", flush=True)
         return False
     return True
 
@@ -155,14 +167,16 @@ def send_coupon_flex_message(
         ],
     }
 
-    r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers)
+    r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers, timeout=10)
     if r.status_code != 200:
-        print(f"[ERROR] LINE flex push failed uid={user_id} status={r.status_code} body={r.text}")
+        print(f"[ERROR] LINE flex push failed uid={user_id} status={r.status_code} body={r.text}", flush=True)
         return False
     return True
 
 
-# ===== Tracking =====
+# =========================================================
+# Tracking
+# =========================================================
 
 def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest: str) -> str:
     return (
@@ -174,7 +188,9 @@ def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest: str) 
     )
 
 
-# ===== DB 共通（経過日数＋未送信）=====
+# =========================================================
+# DB 共通（経過日数＋未送信）
+# =========================================================
 
 def fetch_targets_from_db(
     shop_id: str,
@@ -183,6 +199,12 @@ def fetch_targets_from_db(
     sent_col: str,
     limit: int = 5000,
 ) -> List[Dict]:
+    """
+    条件：
+      - shop_id 一致
+      - {sent_col} is null（未送信）
+      - registered_at <= now - days（経過）
+    """
     cutoff = (now_utc - timedelta(days=days)).isoformat()
 
     res = (
@@ -198,27 +220,54 @@ def fetch_targets_from_db(
 
 
 def mark_sent(shop_id: str, user_id: str, sent_col: str, sent_at: str):
-    supabase.table("users").update(
-        {sent_col: sent_at}
-    ).eq("shop_id", shop_id).eq("user_id", user_id).execute()
+    """
+    Supabase 更新が効いてない疑いを潰すため、更新件数をログに出す版
+    """
+    res = (
+        supabase.table("users")
+        .update({sent_col: sent_at})
+        .eq("shop_id", shop_id)
+        .eq("user_id", user_id)
+        .select("user_id, shop_id, registered_at, coupon7_sent_at, coupon30_sent_at")
+        .execute()
+    )
+
+    updated = res.data or []
+    if len(updated) == 0:
+        print(
+            f"[ERROR] mark_sent updated=0 shop_id={shop_id} user_id={user_id} col={sent_col}",
+            flush=True,
+        )
+    else:
+        print(
+            f"[INFO] mark_sent updated=1 shop_id={shop_id} user_id={user_id} col={sent_col} -> {sent_at}",
+            flush=True,
+        )
 
 
 def insert_coupon_send_logs(rows: List[Dict]):
-    if rows:
+    if not rows:
+        return
+    try:
         supabase.table("coupon_send_logs").insert(rows).execute()
+        print(f"[INFO] coupon_send_logs inserted={len(rows)}", flush=True)
+    except Exception as e:
+        print(f"[ERROR] coupon_send_logs insert failed: {e}", flush=True)
 
 
-# ===== 店舗処理（7days + 30days）=====
+# =========================================================
+# 店舗処理（7days + 30days）
+# =========================================================
 
 def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
-    print(f"\n[INFO] === shop: {shop_id} ({shop_conf.get('name')}) ===")
+    print(f"\n[INFO] === shop: {shop_id} ({shop_conf.get('name')}) ===", flush=True)
 
     token = load_line_token(shop_conf)
     if not token:
-        print("[ERROR] LINE token missing")
+        print("[ERROR] LINE token missing", flush=True)
         return
 
-    coupon_url = shop_conf.get("coupon_url")
+    coupon_url = shop_conf.get("coupon_url")  # lin.eeなど（あればtrackingへ）
 
     img7 = shop_conf.get("coupon7_image")
     msg7_tpl = shop_conf.get("coupon_after_7days")
@@ -226,26 +275,28 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
     img30 = shop_conf.get("coupon30_image") or img7
     msg30_tpl = shop_conf.get("coupon_after_30days") or msg7_tpl
 
+    if not img7:
+        print("[ERROR] coupon7_image missing (shops.yaml)", flush=True)
+        return
+
     now_utc = now_jst.astimezone(timezone.utc)
 
     targets7 = fetch_targets_from_db(shop_id, now_utc, 7, "coupon7_sent_at")
     targets30 = fetch_targets_from_db(shop_id, now_utc, 30, "coupon30_sent_at")
 
-    print(f"[INFO] 7days targets(DB): {len(targets7)}")
-    print(f"[INFO] 30days targets(DB): {len(targets30)}")
+    print(f"[INFO] 7days targets(DB): {len(targets7)}", flush=True)
+    print(f"[INFO] 30days targets(DB): {len(targets30)}", flush=True)
 
     if is_dry_run():
-        print("[INFO] DRY_RUN=1 → send skipped")
+        print("[INFO] DRY_RUN=1 → send skipped", flush=True)
         return
 
     logs: List[Dict] = []
 
     def _send(uid: str, text: str, image_url: str, ctype: str) -> bool:
         if coupon_url:
-            return send_coupon_flex_message(
-                token, uid, text, image_url,
-                build_tracking_url(shop_id, ctype, uid, coupon_url)
-            )
+            tracking = build_tracking_url(shop_id, ctype, uid, coupon_url)
+            return send_coupon_flex_message(token, uid, text, image_url, tracking)
         return send_coupon_message(token, uid, text, image_url)
 
     for days, targets, sent_col, tpl, img in [
@@ -256,33 +307,40 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
             uid = t.get("user_id")
             if not uid:
                 continue
-            name = (t.get("display_name") or "").strip()
 
+            name = (t.get("display_name") or "").strip()
             text = tpl.format(name=name, display_name=name) if tpl else f"{name}さん、登録{days}日記念のクーポンです。"
             ts = now_utc.isoformat()
+            ctype = f"{days}days"
 
-            if _send(uid, text, img, f"{days}days"):
+            ok = _send(uid, text, img, ctype)
+            if ok:
                 mark_sent(shop_id, uid, sent_col, ts)
                 logs.append(
-                    {"shop_id": shop_id, "user_id": uid, "coupon_type": f"{days}days", "sent_at": ts}
+                    {"shop_id": shop_id, "user_id": uid, "coupon_type": ctype, "sent_at": ts}
                 )
 
     insert_coupon_send_logs(logs)
-    print(f"[INFO] {shop_id}: logs={len(logs)}")
+    print(f"[INFO] {shop_id}: logs={len(logs)}", flush=True)
 
 
-# ===== main =====
+# =========================================================
+# main
+# =========================================================
 
 def main():
-    print("=== daily_coupon_job START ===")
+    print("=== daily_coupon_job START ===", flush=True)
     now = jst_now()
     shops = load_shops()
     if not shops:
-        print("[ERROR] shops empty")
+        print("[ERROR] shops empty", flush=True)
         return
 
     for sid, conf in shops.items():
-        run_for_shop(sid, conf, now)
+        try:
+            run_for_shop(sid, conf, now)
+        except Exception as e:
+            print(f"[ERROR] shop={sid} exception: {e}", flush=True)
 
 
 if __name__ == "__main__":
