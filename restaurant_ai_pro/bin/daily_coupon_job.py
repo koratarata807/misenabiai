@@ -50,9 +50,9 @@ TRACKING_BASE = (
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    print("[ERROR] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing", file=sys.stderr, flush=True)
-    sys.exit(1)
+def require_supabase_env():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing")
 
 print(f"[ENV] SUPABASE_URL_suffix={_url_suffix(SUPABASE_URL)}", flush=True)
 
@@ -459,6 +459,7 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
 # =========================================================
 
 def main():
+    require_supabase_env()
     _runtime_sig()
     print("=== daily_coupon_job START ===", flush=True)
     now = jst_now()
