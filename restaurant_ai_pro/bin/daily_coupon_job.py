@@ -459,6 +459,7 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
 # =========================================================
 
 def main():
+    _runtime_sig()
     print("=== daily_coupon_job START ===", flush=True)
     now = jst_now()
     shops = load_shops()
@@ -475,3 +476,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ===== DEBUG SIGNATURE (TEMP) =====
+import os as _os, hashlib as _hashlib
+
+def _runtime_sig():
+    try:
+        p = _os.path.abspath(__file__)
+        b = open(p, "rb").read()
+        print(f"[RUNTIME_DAILY] file={p}", flush=True)
+        print(f"[RUNTIME_DAILY] sha256={_hashlib.sha256(b).hexdigest()}", flush=True)
+        print(f"[RUNTIME_DAILY] cwd={_os.getcwd()}", flush=True)
+    except Exception as e:
+        print(f"[RUNTIME_DAILY][ERROR] {e}", flush=True)
