@@ -13,6 +13,21 @@ import urllib.parse
 from supabase import create_client, Client
 
 # =========================================================
+# REV / ENV識別
+# =========================================================
+
+REV = os.getenv("APP_REV", "rev_not_set")
+# datetimeはクラスなので datetime.utcnow() を使う（datetime.datetime ではない）
+print(f"[REV] {REV} {datetime.utcnow().isoformat()}Z", flush=True)
+
+# Supabase接続先の識別用（末尾だけ出す）
+def _url_suffix(url: str, n: int = 18) -> str:
+    if not url:
+        return "None"
+    return url[-n:]
+
+
+# =========================================================
 # 基本設定
 # =========================================================
 
@@ -29,17 +44,24 @@ TRACKING_BASE = (
 )
 
 # =========================================================
-# Supabase（前のやり方 그대로）
+# Supabase
 # =========================================================
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    print("[ERROR] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing", file=sys.stderr)
+    print("[ERROR] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing", file=sys.stderr, flush=True)
     sys.exit(1)
 
+print(f"[ENV] SUPABASE_URL_suffix={_url_suffix(SUPABASE_URL)}", flush=True)
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+# どの列を “DBキー” として使うか（環境変数で固定可能）
+# 例：Cloud Run env に USER_KEY_COL=line_user_id を入れる
+USER_KEY_COL = os.getenv("USER_KEY_COL", "").strip() or None  # Noneなら自動判定
+print(f"[ENV] USER_KEY_COL={USER_KEY_COL or 'AUTO'}", flush=True)
 
 
 def is_dry_run() -> bool:
@@ -56,7 +78,7 @@ def jst_now() -> datetime:
 
 def load_shops() -> Dict[str, Dict]:
     if not SHOPS_YAML.exists():
-        print("[ERROR] shops.yaml not found", file=sys.stderr)
+        print("[ERROR] shops.yaml not found", file=sys.stderr, flush=True)
         return {}
 
     with SHOPS_YAML.open("r", encoding="utf-8") as f:
@@ -71,7 +93,7 @@ def load_shops() -> Dict[str, Dict]:
 
 
 # =========================================================
-# LINE（前のやり方 그대로）
+# LINE
 # =========================================================
 
 def load_line_token(shop_conf: Dict) -> Optional[str]:
@@ -80,14 +102,12 @@ def load_line_token(shop_conf: Dict) -> Optional[str]:
       1) 環境変数（Cloud Run / 本番）
       2) env_file（ローカル検証用）
     """
-    # (1) env
     env_key = shop_conf.get("line_token_env")
     if env_key:
         token = os.getenv(env_key)
         if token:
             return token
 
-    # (2) env_file fallback
     env_file = shop_conf.get("env_file")
     if not env_file:
         return None
@@ -105,16 +125,11 @@ def send_coupon_message(token: str, user_id: str, text: str, image_url: str) -> 
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
-
     payload = {
         "to": user_id,
         "messages": [
             {"type": "text", "text": text},
-            {
-                "type": "image",
-                "originalContentUrl": image_url,
-                "previewImageUrl": image_url,
-            },
+            {"type": "image", "originalContentUrl": image_url, "previewImageUrl": image_url},
         ],
     }
 
@@ -125,13 +140,7 @@ def send_coupon_message(token: str, user_id: str, text: str, image_url: str) -> 
     return True
 
 
-def send_coupon_flex_message(
-    token: str,
-    user_id: str,
-    text: str,
-    image_url: str,
-    coupon_url: str,
-) -> bool:
+def send_coupon_flex_message(token: str, user_id: str, text: str, image_url: str, coupon_url: str) -> bool:
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
@@ -151,11 +160,7 @@ def send_coupon_flex_message(
                         "size": "full",
                         "aspectRatio": "20:13",
                         "aspectMode": "cover",
-                        "action": {
-                            "type": "uri",
-                            "label": "クーポンを開く",
-                            "uri": coupon_url,
-                        },
+                        "action": {"type": "uri", "label": "クーポンを開く", "uri": coupon_url},
                     },
                     "body": {
                         "type": "box",
@@ -189,6 +194,66 @@ def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest: str) 
 
 
 # =========================================================
+# DB：キー自動判定 & 冪等性ガード
+# =========================================================
+
+def detect_user_key_col(shop_id: str) -> str:
+    """
+    USER_KEY_COL が未設定の場合、usersから1件取って
+    user_id / line_user_id のどちらが実データとして使われていそうかを推定する。
+    """
+    if USER_KEY_COL:
+        return USER_KEY_COL
+
+    # 1件だけ見て判定（安全に両方select）
+    res = (
+        supabase.table("users")
+        .select("user_id,line_user_id,shop_id")
+        .eq("shop_id", shop_id)
+        .limit(1)
+        .execute()
+    )
+    row = (res.data or [None])[0]
+    if not row:
+        # データ無いなら一旦user_idで（ログで気づける）
+        print(f"[KEY][AUTO] users empty for shop_id={shop_id} -> fallback user_id", flush=True)
+        return "user_id"
+
+    # 値が入ってそうな方を優先
+    if row.get("user_id"):
+        print(f"[KEY][AUTO] choose user_id (sample has user_id)", flush=True)
+        return "user_id"
+    if row.get("line_user_id"):
+        print(f"[KEY][AUTO] choose line_user_id (sample has line_user_id)", flush=True)
+        return "line_user_id"
+
+    # どっちも空ならfallback
+    print(f"[KEY][AUTO] sample has neither -> fallback user_id", flush=True)
+    return "user_id"
+
+
+def already_sent_today(shop_id: str, user_id: str, coupon_type: str, now_utc: datetime) -> bool:
+    """
+    ⑤ 冪等性ガード：同日・同種の送信が coupon_send_logs にあれば送らない
+    """
+    day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    day_end = (now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).isoformat()
+
+    res = (
+        supabase.table("coupon_send_logs")
+        .select("id")
+        .eq("shop_id", shop_id)
+        .eq("user_id", user_id)
+        .eq("coupon_type", coupon_type)
+        .gte("sent_at", day_start)
+        .lt("sent_at", day_end)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)
+
+
+# =========================================================
 # DB 共通（経過日数＋未送信）
 # =========================================================
 
@@ -197,6 +262,7 @@ def fetch_targets_from_db(
     now_utc: datetime,
     days: int,
     sent_col: str,
+    user_key_col: str,
     limit: int = 5000,
 ) -> List[Dict]:
     """
@@ -209,40 +275,94 @@ def fetch_targets_from_db(
 
     res = (
         supabase.table("users")
-        .select("user_id,display_name")
+        .select("user_id,line_user_id,display_name,registered_at")
         .eq("shop_id", shop_id)
-        .is_(sent_col, "null")
+        .is_(sent_col, None)
         .lte("registered_at", cutoff)
         .limit(limit)
         .execute()
     )
-    return res.data or []
+
+    rows = res.data or []
+
+    # ④：送信に使うUID（LINEのUxxx）を確定させる
+    # user_key_col が user_id でも line_user_id でも、送信用に uid を作っておく
+    for r in rows:
+        r["_uid"] = r.get(user_key_col) or r.get("user_id") or r.get("line_user_id")
+
+    # uidがない行は除外（ログで気づける）
+    filtered = [r for r in rows if r.get("_uid")]
+    if len(filtered) != len(rows):
+        print(f"[WARN] targets missing uid filtered out: {len(rows)-len(filtered)}", flush=True)
+
+    return filtered
 
 
-def mark_sent(shop_id: str, user_id: str, sent_col: str, sent_at: str):
+def mark_sent(shop_id: str, uid: str, sent_col: str, sent_at: str, user_key_col: str):
     """
-    Supabase 更新が効いてない疑いを潰すため、更新件数をログに出す版
+    ③ 原因確定版（BEFORE/UPDATE/AFTER）
     """
+    url_suf = _url_suffix(SUPABASE_URL)
+
+    # BEFORE
+    before = (
+        supabase.table("users")
+        .select(f"shop_id,{user_key_col},registered_at,coupon7_sent_at,coupon30_sent_at,welcome_coupon_sent_at")
+        .eq("shop_id", shop_id)
+        .eq(user_key_col, uid)
+        .limit(1)
+        .execute()
+    )
+    exists = bool(before.data)
+    print(
+        f"[MARK_SENT][BEFORE] url_suf={url_suf} exists={exists} shop_id={shop_id} {user_key_col}={uid} col={sent_col}",
+        flush=True,
+    )
+    if exists:
+        print(f"[MARK_SENT][BEFORE_ROW] {before.data[0]}", flush=True)
+
+    # UPDATE
     res = (
         supabase.table("users")
         .update({sent_col: sent_at})
         .eq("shop_id", shop_id)
-        .eq("user_id", user_id)
-        .select("user_id, shop_id, registered_at, coupon7_sent_at, coupon30_sent_at")
+        .eq(user_key_col, uid)
+        .select(f"shop_id,{user_key_col},coupon7_sent_at,coupon30_sent_at,welcome_coupon_sent_at")
         .execute()
     )
+    updated_rows = res.data or []
+    updated_n = len(updated_rows)
+    print(
+        f"[MARK_SENT][UPDATE] url_suf={url_suf} updated={updated_n} shop_id={shop_id} {user_key_col}={uid} col={sent_col} -> {sent_at}",
+        flush=True,
+    )
+    if updated_n > 0:
+        print(f"[MARK_SENT][UPDATE_ROW] {updated_rows[0]}", flush=True)
 
-    updated = res.data or []
-    if len(updated) == 0:
-        print(
-            f"[ERROR] mark_sent updated=0 shop_id={shop_id} user_id={user_id} col={sent_col}",
-            flush=True,
-        )
-    else:
-        print(
-            f"[INFO] mark_sent updated=1 shop_id={shop_id} user_id={user_id} col={sent_col} -> {sent_at}",
-            flush=True,
-        )
+    # AFTER
+    after = (
+        supabase.table("users")
+        .select(f"shop_id,{user_key_col},registered_at,coupon7_sent_at,coupon30_sent_at,welcome_coupon_sent_at")
+        .eq("shop_id", shop_id)
+        .eq(user_key_col, uid)
+        .limit(1)
+        .execute()
+    )
+    after_exists = bool(after.data)
+    print(
+        f"[MARK_SENT][AFTER] url_suf={url_suf} exists={after_exists} shop_id={shop_id} {user_key_col}={uid}",
+        flush=True,
+    )
+    if after_exists:
+        print(f"[MARK_SENT][AFTER_ROW] {after.data[0]}", flush=True)
+
+    # DIAG
+    if not exists:
+        print("[MARK_SENT][DIAG] BEFOREで行が見えてない → WHERE不一致(列名/値/shop_id) or 別DB", flush=True)
+    elif exists and updated_n == 0:
+        print("[MARK_SENT][DIAG] 行は存在するが update=0 → RLS/権限/型/WHERE条件ミスの可能性", flush=True)
+    elif updated_n > 0 and after_exists:
+        print("[MARK_SENT][DIAG] update成功 → DB永続化OK（次はダッシュボード側/接続先を疑う）", flush=True)
 
 
 def insert_coupon_send_logs(rows: List[Dict]):
@@ -267,6 +387,10 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
         print("[ERROR] LINE token missing", flush=True)
         return
 
+    # ④：この店舗で使うDBキー列を決める（AUTO or env固定）
+    user_key_col = detect_user_key_col(shop_id)
+    print(f"[KEY] shop_id={shop_id} user_key_col={user_key_col}", flush=True)
+
     coupon_url = shop_conf.get("coupon_url")  # lin.eeなど（あればtrackingへ）
 
     img7 = shop_conf.get("coupon7_image")
@@ -281,8 +405,8 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
 
     now_utc = now_jst.astimezone(timezone.utc)
 
-    targets7 = fetch_targets_from_db(shop_id, now_utc, 7, "coupon7_sent_at")
-    targets30 = fetch_targets_from_db(shop_id, now_utc, 30, "coupon30_sent_at")
+    targets7 = fetch_targets_from_db(shop_id, now_utc, 7, "coupon7_sent_at", user_key_col)
+    targets30 = fetch_targets_from_db(shop_id, now_utc, 30, "coupon30_sent_at", user_key_col)
 
     print(f"[INFO] 7days targets(DB): {len(targets7)}", flush=True)
     print(f"[INFO] 30days targets(DB): {len(targets30)}", flush=True)
@@ -304,7 +428,7 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
         (30, targets30, "coupon30_sent_at", msg30_tpl, img30),
     ]:
         for t in targets:
-            uid = t.get("user_id")
+            uid = t.get("_uid")
             if not uid:
                 continue
 
@@ -313,12 +437,18 @@ def run_for_shop(shop_id: str, shop_conf: Dict, now_jst: datetime):
             ts = now_utc.isoformat()
             ctype = f"{days}days"
 
+            # ⑤：冪等性ガード（同日同種は送らない）
+            if already_sent_today(shop_id, uid, ctype, now_utc):
+                print(f"[SKIP] already sent today shop_id={shop_id} uid={uid} type={ctype}", flush=True)
+                continue
+
             ok = _send(uid, text, img, ctype)
             if ok:
-                mark_sent(shop_id, uid, sent_col, ts)
-                logs.append(
-                    {"shop_id": shop_id, "user_id": uid, "coupon_type": ctype, "sent_at": ts}
-                )
+                # ③：原因確定ログ + 永続化
+                mark_sent(shop_id, uid, sent_col, ts, user_key_col)
+
+                # 送信ログ（分母）
+                logs.append({"shop_id": shop_id, "user_id": uid, "coupon_type": ctype, "sent_at": ts})
 
     insert_coupon_send_logs(logs)
     print(f"[INFO] {shop_id}: logs={len(logs)}", flush=True)
