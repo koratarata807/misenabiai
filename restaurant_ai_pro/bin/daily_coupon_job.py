@@ -56,8 +56,9 @@ print(f"[ENV] SUPABASE_URL_suffix={_url_suffix(SUPABASE_URL)}", flush=True)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+# 互換のため残すが、運用では user_id 固定（line_user_id は一切使わない）
 USER_KEY_COL = os.getenv("USER_KEY_COL", "").strip() or None
-print(f"[ENV] USER_KEY_COL={USER_KEY_COL or 'AUTO'}", flush=True)
+print(f"[ENV] USER_KEY_COL={USER_KEY_COL or 'AUTO(user_id fixed)'}", flush=True)
 
 
 def is_dry_run() -> bool:
@@ -189,26 +190,13 @@ def build_tracking_url(shop_id: str, coupon_type: str, user_id: str, dest: str) 
 # =========================================================
 
 def detect_user_key_col(shop_id: str) -> str:
+    """
+    運用の正：users.user_id に LINE の Uxxxx が入っている。
+    line_user_id は使わない / 参照しない（42703 根絶）。
+    """
     if USER_KEY_COL:
+        # 互換のため残すが、通常は "user_id" 以外にしないこと
         return USER_KEY_COL
-
-    res = (
-        supabase.table("users")
-        .select("user_id,line_user_id,shop_id")
-        .eq("shop_id", shop_id)
-        .limit(1)
-        .execute()
-    )
-    row = (res.data or [None])[0]
-    if not row:
-        print(f"[KEY][AUTO] users empty for shop_id={shop_id} -> fallback user_id", flush=True)
-        return "user_id"
-
-    if row.get("user_id"):
-        return "user_id"
-    if row.get("line_user_id"):
-        return "line_user_id"
-
     return "user_id"
 
 
@@ -244,9 +232,10 @@ def fetch_targets_from_db(
 ) -> List[Dict]:
     cutoff = (now_utc - timedelta(days=days)).isoformat()
 
+    # ★ line_user_id を絶対に SELECT しない
     res = (
         supabase.table("users")
-        .select("user_id,line_user_id,display_name,registered_at")
+        .select("user_id,display_name,registered_at")
         .eq("shop_id", shop_id)
         .is_(sent_col, None)
         .lte("registered_at", cutoff)
@@ -256,19 +245,19 @@ def fetch_targets_from_db(
 
     rows = res.data or []
     for r in rows:
-        r["_uid"] = r.get(user_key_col) or r.get("user_id") or r.get("line_user_id")
+        # ★ UID は user_id 固定（user_key_col が user_id 以外でも user_id を優先）
+        r["_uid"] = r.get("user_id") or r.get(user_key_col)
 
     return [r for r in rows if r.get("_uid")]
 
 
 def mark_sent(shop_id: str, uid: str, sent_col: str, sent_at: str, user_key_col: str):
-    supabase.table("users").update(
-        {sent_col: sent_at}
-    ).eq(
-        "shop_id", shop_id
-    ).eq(
-        user_key_col, uid
-    ).execute()
+    """
+    更新キーも user_id 固定を推奨。
+    user_key_col を残しているのは最小差分のため。
+    """
+    # ★ まず user_id で更新（運用の正）
+    supabase.table("users").update({sent_col: sent_at}).eq("shop_id", shop_id).eq("user_id", uid).execute()
 
 
 def insert_coupon_send_logs(rows: List[Dict]):
