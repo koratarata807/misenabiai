@@ -1,6 +1,7 @@
 // app/dashboard/[shopId]/page.tsx
 import { headers } from "next/headers";
 import DailyOpenChart from "./DailyOpenChart";
+import AiInsightCard from "./AiInsightCard";
 
 // ===== 型定義 =====
 type DashboardSummary = {
@@ -58,6 +59,8 @@ type CampaignStat = {
 type CampaignStatsResponse = {
   shop_id: string;
   campaigns: CampaignStat[];
+  // insight はAPIに含まれるが型に無いので、まずは optional any で受ける
+  insight?: any;
 };
 
 // ===== 共通：ベースURL取得（Next.js 16 用） =====
@@ -158,6 +161,7 @@ export default async function DashboardPage(props: {
   const titleShop = dashboard.shop_id ?? shopId;
   const daily = dashboard.daily ?? [];
   const campaigns = campaignStats?.campaigns ?? [];
+  const insight = campaignStats?.insight ?? null; // ★ 追加：AI分析
 
   return (
     <main className="p-6 space-y-6">
@@ -181,6 +185,9 @@ export default async function DashboardPage(props: {
           </div>
         </div>
       </section>
+
+      {/* ★ 1.5 AI分析コメント（追加） */}
+      <AiInsightCard insight={insight} />
 
       {/* 2. HOT / WARM / COLD ユーザー一覧 */}
       <section className="space-y-4">

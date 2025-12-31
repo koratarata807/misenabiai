@@ -1,0 +1,75 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  annotations:
+    run.googleapis.com/build-enable-automatic-updates: 'false'
+    run.googleapis.com/build-id: 57477bf3-f4a6-4a47-b53f-2442bb1d94c2
+    run.googleapis.com/build-image-uri: asia-northeast1-docker.pkg.dev/capable-door-480113-h1/cloud-run-source-deploy/misenavi-daily-coupon
+    run.googleapis.com/build-name: projects/237284363568/locations/asia-northeast1/builds/57477bf3-f4a6-4a47-b53f-2442bb1d94c2
+    run.googleapis.com/build-source-location: gs://run-sources-capable-door-480113-h1-asia-northeast1/services/misenavi-daily-coupon/1766674446.60297-e2ee0e2cd1f542e5809dcc0b84cfa7d0.zip#1766674567737315
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+    run.googleapis.com/urls: '["https://misenavi-daily-coupon-237284363568.asia-northeast1.run.app","https://misenavi-daily-coupon-aabp37ih4q-an.a.run.app"]'
+  labels:
+    cloud.googleapis.com/location: asia-northeast1
+  name: misenavi-daily-coupon
+  namespace: '237284363568'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '1'
+        run.googleapis.com/client-name: gcloud
+        run.googleapis.com/client-version: 549.0.1
+        run.googleapis.com/startup-cpu-boost: 'true'
+      labels:
+        client.knative.dev/nonce: hvkjajqtdr
+        run.googleapis.com/startupProbeType: Default
+    spec:
+      containerConcurrency: 80
+      containers:
+      - env:
+        - name: LINE_TOKEN_SHOPA
+          valueFrom:
+            secretKeyRef:
+              key: latest
+              name: LINE_TOKEN_SHOPA
+        - name: SUPABASE_SERVICE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: latest
+              name: SUPABASE_SERVICE_ROLE_KEY
+        - name: SUPABASE_SERVICE_ROLE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: latest
+              name: SUPABASE_SERVICE_ROLE_KEY
+        - name: JOB_KEY
+          value: haya1229
+        - name: SUPABASE_URL
+          value: https://xfmpvxrozlyiwnhilfeh.supabase.co
+        - name: APP_REV
+          value: 2025-12-25_jobkeyfix4
+        - name: TEST_LINE_USER_ID
+          value: U436eab4e8ee2049a894d01efdf307ee2
+        - name: DRY_RUN
+          value: '0'
+        image: asia-northeast1-docker.pkg.dev/capable-door-480113-h1/cloud-run-source-deploy/misenavi-daily-coupon@sha256:dc99d104633f796db3a74c481c18a5a26c2ef7c9ea50ef8f9d299869f8d7a913
+        ports:
+        - containerPort: 8080
+          name: http1
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        startupProbe:
+          failureThreshold: 1
+          periodSeconds: 240
+          tcpSocket:
+            port: 8080
+          timeoutSeconds: 240
+      serviceAccountName: 237284363568-compute@developer.gserviceaccount.com
+      timeoutSeconds: 300
+  traffic:
+  - latestRevision: true
+    percent: 100

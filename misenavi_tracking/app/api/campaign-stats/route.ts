@@ -10,6 +10,13 @@ type CampaignRow = {
   visit_rate: number | null;
 };
 
+function clamp01(x: number) {
+  if (!Number.isFinite(x)) return 0;
+  if (x < 0) return 0;
+  if (x > 1) return 1;
+  return x;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const shopId = searchParams.get("shop_id");
@@ -18,48 +25,53 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "shop_id is required" }, { status: 400 });
   }
 
-  // ========== 1) 既存のCVビューからキャンペーン別KPIを取得 ==========
-  const { data, error } = await supabaseServer
+  // v1.1：直近7日固定（母数が膨張して指標が死ぬのを防ぐ）
+  const now = new Date();
+  const sinceIso = new Date(
+    now.getTime() - 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  // ========== 1) 既存CVビューからキャンペーン別KPI ==========
+  const { data: cvData, error: cvError } = await supabaseServer
     .from("coupon_campaign_cv")
     .select("coupon_type, opened_users, visits, visit_rate")
     .eq("shop_id", shopId)
     .order("coupon_type", { ascending: true });
 
-  if (error) {
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (cvError) {
+    console.error(cvError);
+    return NextResponse.json({ error: cvError.message }, { status: 500 });
   }
 
-  const campaigns = (data ?? []).map((row: CampaignRow) => ({
+  const campaignsBase = (cvData ?? []).map((row: CampaignRow) => ({
     coupon_type: row.coupon_type,
     opened_users: row.opened_users ?? 0,
     visits: row.visits ?? 0,
     visit_rate: row.visit_rate ?? 0,
   }));
 
-  // ========== 2) sentUsers を Supabase（coupon_send_logs）から取得 ==========
-  // 送信先ユーザーIDは coupon_send_logs.user_id を利用
+  // ========== 2) sentUsers を coupon_send_logs から取得（直近7日） ==========
   const { data: sendLogs, error: sendError } = await supabaseServer
     .from("coupon_send_logs")
-    .select("user_id")
-    .eq("shop_id", shopId);
+    .select("user_id, sent_at")
+    .eq("shop_id", shopId)
+    .gte("sent_at", sinceIso);
 
   if (sendError) {
     console.error(sendError);
     return NextResponse.json({ error: sendError.message }, { status: 500 });
   }
 
-  // ユニーク送信人数
-  const sentUsers = new Set((sendLogs ?? []).map((r) => r.user_id)).size;
+  const sentUsers = new Set((sendLogs ?? []).map((r: any) => r.user_id)).size;
 
-  // ========== 3) 店舗の総評KPI（合算） ==========
-  const openedUsers = campaigns.reduce((a, c) => a + c.opened_users, 0);
-  const visits = campaigns.reduce((a, c) => a + c.visits, 0);
+  // ========== 3) 店舗KPI（合算） ==========
+  const openedUsers = campaignsBase.reduce((a, c) => a + c.opened_users, 0);
+  const visits = campaignsBase.reduce((a, c) => a + c.visits, 0);
 
-  const openRate = sentUsers > 0 ? openedUsers / sentUsers : 0;
-  const ctr = sentUsers > 0 ? visits / sentUsers : 0;
+  const openRate = sentUsers > 0 ? clamp01(openedUsers / sentUsers) : 0;
+  const ctr = sentUsers > 0 ? clamp01(visits / sentUsers) : 0;
 
-  // v1.1：前週比較はまだ無し（後で7d/prev7d VIEWで実装）
+  // v1.1：前週比較はまだ無し
   const openRateDelta = 0;
   const ctrDelta = 0;
 
@@ -72,9 +84,18 @@ export async function GET(req: NextRequest) {
     ctrDelta,
   });
 
-  // ========== 5) UIで使いやすい形に整形 ==========
+  // ========== 5) campaigns も表示崩れ防止のため rate を 0〜1 に統一 ==========
+  const campaigns = campaignsBase.map((c) => ({
+    ...c,
+    // v1.1：coupon_type別のsent_usersはまだ分離できてないので店全体母数を参考値として返す
+    sent_users: sentUsers,
+    open_rate: sentUsers > 0 ? clamp01(c.opened_users / sentUsers) : 0,
+    visit_rate: sentUsers > 0 ? clamp01(c.visits / sentUsers) : 0,
+  }));
+
+  // ========== 6) UI用の insight ==========
   const insight = {
-    period: "v1.1",
+    period: "last7d",
     kpi: {
       sentUsers,
       openedUsers,
