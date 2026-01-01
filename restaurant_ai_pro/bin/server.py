@@ -44,9 +44,6 @@ def _patch_argv(argv: list[str]):
 
 # ===== lazy loaders =====
 def _load_daily():
-    """
-    daily_coupon は叩かれた時だけ import
-    """
     mod = importlib.import_module("restaurant_ai_pro.bin.daily_coupon_job")
 
     # debug fingerprint
@@ -67,12 +64,7 @@ def _load_daily():
 
 
 def _load_weekly():
-    """
-    weekly_coupon も同様に lazy import
-    """
-    mod = importlib.import_module(
-        "restaurant_ai_pro.bin.ai_weekly_line_campaign_onlyoneshop"
-    )
+    mod = importlib.import_module("restaurant_ai_pro.bin.ai_weekly_line_campaign_onlyoneshop")
 
     # debug fingerprint
     try:
@@ -109,25 +101,42 @@ def daily_coupon(_auth=Depends(require_job_key)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ===== WEEKLY =====
+# ===== WEEKLY (single or all shops) =====
 @app.post("/jobs/weekly-coupon")
-def weekly_coupon(_auth=Depends(require_job_key)):
+def weekly_coupon(
+    _auth=Depends(require_job_key),
+    x_shop_id: str | None = Header(default=None, alias="x-shop-id"),
+):
+    """
+    - x-shop-id があれば単店舗
+    - 無ければ全店舗（--shop_id を渡さない）
+    """
     try:
         run_weekly = _load_weekly()
 
+        # 事故りやすいデフォルトを “存在する方” に寄せる
+        shops_yaml = os.getenv("SHOPS_YAML", "restaurant_ai_pro/config/shops.yaml")
+
         argv = [
             "ai_weekly_line_campaign_onlyoneshop.py",
-            "--shops_yaml", os.getenv("SHOPS_YAML", "config/shops.yaml"),
-            "--shop_id", os.getenv("SHOP_ID", "shopA"),
+            "--shops_yaml", shops_yaml,
             "--only_coupon",
         ]
+
+        # 単店舗指定：ヘッダ優先 → env fallback
+        shop_id = x_shop_id or os.getenv("SHOP_ID")
+        if shop_id:
+            argv += ["--shop_id", shop_id]
+
         if os.getenv("DRY_RUN", "0") == "1":
             argv.append("--dry_run")
+
+        print("[WEEKLY] argv =", argv, flush=True)
 
         with _patch_argv(argv):
             run_weekly()
 
-        return {"ok": True}
+        return {"ok": True, "mode": "single" if shop_id else "all", "shop_id": shop_id}
     except Exception as e:
         print(f"[ERROR] weekly_coupon failed: {e}", flush=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -144,14 +153,8 @@ def test_line(_auth=Depends(require_job_key)):
     if not user_id:
         raise HTTPException(status_code=500, detail="TEST_LINE_USER_ID is not set")
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-    }
-    payload = {
-        "to": user_id,
-        "messages": [{"type": "text", "text": "✅ Cloud Run からのテスト送信です"}],
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {"to": user_id, "messages": [{"type": "text", "text": "✅ Cloud Run からのテスト送信です"}]}
 
     r = requests.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers, timeout=10)
     if r.status_code != 200:
