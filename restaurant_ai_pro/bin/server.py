@@ -11,7 +11,7 @@ app = FastAPI()
 LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 
 # ===== BOOT LOG =====
-print("### BOOT: restaurant_ai_pro.bin.server loaded ###", flush=True)
+print("### BOOT: bin.server loaded ###", flush=True)
 print("### BOOT JOB_KEY set? =>", "YES" if os.getenv("JOB_KEY") else "NO", flush=True)
 print("### BOOT SUPABASE_URL set? =>", "YES" if os.getenv("SUPABASE_URL") else "NO", flush=True)
 print(
@@ -44,7 +44,7 @@ def _patch_argv(argv: list[str]):
 
 # ===== lazy loaders =====
 def _load_daily():
-    mod = importlib.import_module("restaurant_ai_pro.bin.daily_coupon_job")
+    mod = importlib.import_module("bin.daily_coupon_job")
 
     # debug fingerprint
     try:
@@ -64,7 +64,7 @@ def _load_daily():
 
 
 def _load_weekly():
-    mod = importlib.import_module("restaurant_ai_pro.bin.ai_weekly_line_campaign_onlyoneshop")
+    mod = importlib.import_module("bin.ai_weekly_line_campaign_onlyoneshop")
 
     # debug fingerprint
     try:
@@ -115,7 +115,7 @@ def weekly_coupon(
         run_weekly = _load_weekly()
 
         # 事故りやすいデフォルトを “存在する方” に寄せる
-        shops_yaml = os.getenv("SHOPS_YAML", "restaurant_ai_pro/config/shops.yaml")
+        shops_yaml = os.getenv("SHOPS_YAML", "config/shops.yaml")
 
         argv = [
             "ai_weekly_line_campaign_onlyoneshop.py",
