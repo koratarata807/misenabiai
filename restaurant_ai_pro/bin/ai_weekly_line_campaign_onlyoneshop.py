@@ -28,7 +28,7 @@ import requests
 import yaml
 
 # 外部モジュール（あなたのパッケージ）
-from restaurant_ai_pro.restaurant_ai.advisor import AdviceInput, generate_actionable_advice
+from restaurant_ai.advisor import AdviceInput, generate_actionable_advice
 
 # ========= Matplotlib（日本語フォント/Agg） =========
 import matplotlib
