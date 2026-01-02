@@ -1,7 +1,5 @@
-fastapi
-uvicorn[standard]
-gunicorn
-requests
-pyyaml
-pandas
-matplotlib
+fastapi==0.115.6
+uvicorn==0.32.1
+gunicorn==23.0.0
+PyYAML==6.0.2
+requests==2.32.3
