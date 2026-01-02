@@ -2,23 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 AI週報（PDF生成）＋ 顧客向け 自動販促（クーポン/おすすめ）
-- daily_coupon と同じ運用：shops.yaml → env_file 読込 → 店舗ごとに実行
-- weekly は原則 multicast/push（誰に送ったか追跡）
-- Supabase に weekly 送信ログを保存（campaign_id / variant / dedupe_key）
-- recipients は Supabase から HOT/WARM 抽出（segment配信）
-- 冪等性は dedupe_key を前提にDB側で担保（dedupe_key UNIQUE推奨）
+(B案) Cloud Run前提：.envファイルは読まない。環境変数/Secretだけで完結させる。
 
 必要環境変数（共通/基盤）
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
 - OPENWEATHER_KEY（任意）
 
-店舗ごとの env_file に入れる想定（例）
-- LINE_TOKEN_SHOPA=xxxxxxxx
-- SHOP_LOCATION=residential
-- SHOP_STATION_MIN=8
-- WEEKLY_VARIANT_ID=A
-- WEEKLY_ENABLE_BROADCAST=0
+店舗ごとの想定（Cloud Run env / Secret）
+- LINE_TOKEN_SHOPA / LINE_TOKEN_SHOPB / ...
+- SHOP_LOCATION（任意）
+- SHOP_STATION_MIN（任意）
+- WEEKLY_VARIANT_ID（任意）
+- WEEKLY_ENABLE_BROADCAST（任意）
 """
 
 from __future__ import annotations
@@ -68,29 +64,13 @@ LINE_BROADCAST_API  = "https://api.line.me/v2/bot/message/broadcast"
 OPENWEATHER_URL     = "https://api.openweathermap.org/data/2.5/weather"
 
 
-# ========= .env loader（python-dotenv 不要） =========
+# ========= (B案) .env loader（無効化） =========
 def load_env_file(path: str, *, override: bool = True) -> None:
     """
-    .env を KEY=VALUE 形式で読み、os.environ に反映する。
-    - override=True なら既存キーも上書き（daily_coupon と同じ挙動に寄せる）
+    B案：Cloud Runでは .env ファイル運用をしない
+    → 互換のため関数は残すが「何もしない」
     """
-    if not path:
-        return
-    if not os.path.exists(path):
-        raise FileNotFoundError(f".env file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        for raw in f:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k = k.strip()
-            v = v.strip().strip('"').strip("'")
-            if (k in os.environ) and (not override):
-                continue
-            os.environ[k] = v
+    return
 
 
 # ========= shops.yaml loader =========
@@ -107,6 +87,13 @@ def load_shops_yaml(path: str) -> list[dict]:
         shops = obj
     if not isinstance(shops, list):
         raise ValueError("shops.yaml format error: expected list or {shops: [...]}")
+
+    # 互換：id/line_token_env が無い店は補完しておく
+    for s in shops:
+        sid = str(s.get("id") or "")
+        if sid and not s.get("line_token_env"):
+            # shopA -> LINE_TOKEN_SHOPA
+            s["line_token_env"] = f"LINE_TOKEN_{sid.upper()}"
     return shops
 
 
@@ -119,8 +106,8 @@ def pick_shop(shops: list[dict], shop_id: str) -> dict:
 
 def export_shop_cfg_to_env(shop: dict) -> None:
     """
-    shop.yaml の値を環境変数へ注入（このスクリプト内だけで使う）
-    ※既存環境変数を壊さない方針（既にセットされているものは優先）
+    shops.yaml の値を環境変数へ注入（このスクリプト内だけで使う）
+    ※既存環境変数を壊さない（既にセットされているものは優先）
     """
     mapping = {
         "style": "SHOP_STYLE",
@@ -135,9 +122,6 @@ def export_shop_cfg_to_env(shop: dict) -> None:
         if val is None or val == "":
             continue
         os.environ.setdefault(envk, str(val))
-
-    # Flex用画像URL（予約バナー）を shops.yaml から拾いたい場合はここで拡張
-    # 例: shop["reserve_image"] -> SHOP_RESERVE_IMAGE_URL
 
 
 # ========= Supabase REST =========
@@ -180,12 +164,6 @@ def make_campaign_id(shop_id: str, campaign_type: str) -> str:
     return f"{shop_id}_{wk}_weekly_{campaign_type}"
 
 def fetch_weekly_recipients(shop_id: str) -> list[str]:
-    """
-    users テーブル想定：
-      - shop_id
-      - line_user_id
-      - segment（HOT/WARM/COLD）
-    """
     rows = sb_get(
         "users",
         params={
@@ -376,15 +354,25 @@ def is_bad_weather(main: Optional[str]) -> bool:
 
 
 # ========= LINE送信 =========
+def _resolve_line_token_env(shop: dict) -> str:
+    """
+    優先順位：
+      1) shops.yaml の line_token_env
+      2) shop_id から自動生成：LINE_TOKEN_{SHOPID}
+    """
+    env_key = shop.get("line_token_env")
+    if env_key:
+        return str(env_key)
+    sid = str(shop.get("id") or "")
+    if sid:
+        return f"LINE_TOKEN_{sid.upper()}"
+    return "LINE_CHANNEL_ACCESS_TOKEN"
+
 def _get_line_token_from_shop_env(shop: dict) -> str:
-    """
-    daily_coupon 互換：
-      shops.yaml の line_token_env（例: LINE_TOKEN_SHOPA）を参照して token を取得
-    """
-    env_key = shop.get("line_token_env") or "LINE_CHANNEL_ACCESS_TOKEN"
+    env_key = _resolve_line_token_env(shop)
     token = os.environ.get(env_key)
     if not token:
-        raise RuntimeError(f"LINE token missing. env_key={env_key} (check env_file)")
+        raise RuntimeError(f"LINE token missing. env_key={env_key}")
     return token
 
 def _line_headers(shop: dict) -> dict:
@@ -413,7 +401,6 @@ def send_multicast(shop: dict, uids: Iterable[str], messages: list[dict], chunk:
         if r.status_code == 200:
             ok += len(part)
         else:
-            # フォールバック（push）
             print(f"[WARN] MULTICAST {r.status_code}: {r.text} (fallback to push)")
             for uid in part:
                 pr = requests.post(
@@ -436,11 +423,6 @@ def send_messages_all_modes(
     enable_broadcast: bool,
     recipients: list[str],
 ) -> Tuple[int, int, str]:
-    """
-    方針：
-      - enable_broadcast True かつ DISABLE_BROADCAST!=1 → broadcast
-      - recipients があれば multicast（失敗は push フォールバック）
-    """
     if enable_broadcast and os.environ.get("DISABLE_BROADCAST", "0") != "1":
         ok, fail = send_broadcast(shop, messages)
         return (ok, fail, "broadcast")
@@ -651,24 +633,6 @@ def build_ai_campaign_message(
         info_text = "｜".join([p for p in [feature, note] if p]) or _build_menu_reason(name_clean, weather_main)
         menu_lines.append(f"{title_line}\n　{info_text}")
 
-    if not menu_lines and menu_df is not None and "menu" in menu_df.columns:
-        for _, row in menu_df.head(3).iterrows():
-            name_clean = str(row.get("menu", "")).strip()
-            if not name_clean:
-                continue
-            feature = str(row.get("item_feature", "")).strip()
-            note = str(row.get("yield_note", "")).strip()
-            price_val = row.get("price", "")
-            price_str = ""
-            try:
-                if price_val != "":
-                    price_str = f"{int(price_val)}円"
-            except Exception:
-                price_str = f"{price_val}円" if price_val not in (None, "") else ""
-            title_line = f"・{name_clean}" + (f"（{price_str}）" if price_str else "")
-            info_text = "｜".join([p for p in [feature, note] if p]) or _build_menu_reason(name_clean, weather_main)
-            menu_lines.append(f"{title_line}\n　{info_text}")
-
     food_emoji = _pick_emoji("food")
     menu_block = f"【本日のおすすめ】{food_emoji}\n" + ("\n\n".join(menu_lines) if menu_lines else "・本日のおすすめをご用意しております。スタッフまでお尋ねください。")
 
@@ -693,7 +657,6 @@ def build_ai_campaign_message(
         blocks += ["", weather_comment]
     blocks += ["", closing_line]
 
-    # 店舗情報（shops.yaml→envへ注入済み想定）
     shop_tel = os.environ.get("SHOP_TEL")
     shop_reserve = os.environ.get("SHOP_RESERVE_URL")
     shop_address = os.environ.get("SHOP_ADDRESS")
@@ -749,12 +712,12 @@ def build_owner_campaign_message(ws: WeeklySummary, ad, weather_main: Optional[s
 
 # ========= 実行（店舗単位） =========
 def run_for_shop(shop: dict, *, args) -> None:
-    # 1) 店舗envを読み込み（daily_coupon互換）
+    # 1) (B案) env_fileは読まない（関数自体がno-op）
     env_file = shop.get("env_file")
     if env_file:
         load_env_file(env_file, override=True)
 
-    # 2) shop.yaml の情報を env に注入（文面用）
+    # 2) shops.yaml の情報を env に注入（文面用）
     export_shop_cfg_to_env(shop)
 
     # 3) 入力パス確定（引数優先→shop設定）
@@ -769,7 +732,6 @@ def run_for_shop(shop: dict, *, args) -> None:
     daily = load_daily(daily_csv)
     ws = analyze_week(daily)
 
-    # menu.csv
     menu_path = args.menu_csv or shop.get("menu_csv") or os.path.join(os.path.dirname(daily_csv), "menu.csv")
     menu_df = pd.read_csv(menu_path) if (menu_path and os.path.exists(menu_path)) else None
 
@@ -795,11 +757,10 @@ def run_for_shop(shop: dict, *, args) -> None:
     )
     ad = generate_actionable_advice(inp)
 
-    # PDF生成（常に作る）
     pdf_path = os.path.join(outdir, "weekly_report.pdf")
     build_pdf(ws, daily, pdf_path)
 
-    # 店長向け：任意送信
+    # 店長向け（任意）
     headline = (
         f"📊 AI週報\n期間：{ws.start_date.date()}〜{ws.end_date.date()}\n"
         f"総売上：¥{ws.total_sales:,.0f}\n日平均：¥{ws.avg_day_sales:,.0f}\n"
@@ -839,7 +800,6 @@ def run_for_shop(shop: dict, *, args) -> None:
     weekly_recipients = fetch_weekly_recipients(shop_id)
     print(f"[INFO] weekly recipients(HOT/WARM): {len(weekly_recipients)} shop_id={shop_id}")
 
-    # state（店舗別）
     state_dir = args.state_dir or ".state"
     state_path = os.path.join(state_dir, f"weekly_{shop_id}.json")
     st = load_weekly_state(state_path)
@@ -855,10 +815,8 @@ def run_for_shop(shop: dict, *, args) -> None:
     today = pd.Timestamp.today()
     weekday = today.dayofweek
 
-    # regular: 金曜固定（要件通り）
     is_weekend_regular = (weekday == 4)
 
-    # extra: 条件に合致
     threshold = float(args.threshold if args.threshold is not None else shop.get("threshold", 0.95))
     weak_today   = (ws.dow_weak is not None and weekday == ws.dow_weak)
     bad_weather  = is_bad_weather(weather_main)
@@ -881,7 +839,6 @@ def run_for_shop(shop: dict, *, args) -> None:
     ai_message = build_ai_campaign_message(ws, ad, weather_main, campaign_mode, campaign_type, menu_df=menu_df)
     owner_message = build_owner_campaign_message(ws, ad, weather_main, campaign_mode, campaign_type)
 
-    # weekly broadcast は原則禁止（必要なら env で許可）
     weekly_enable_broadcast = os.environ.get("WEEKLY_ENABLE_BROADCAST", "0") == "1"
 
     if args.dry_run:
@@ -900,7 +857,7 @@ def run_for_shop(shop: dict, *, args) -> None:
         )
         print(f"[SUMMARY] owner_campaign({campaign_type}): ok={ok_o} fail={fail_o} mode={mode_o}")
 
-    # 2) 顧客：テキスト + Flex（あれば）
+    # 2) 顧客
     reserve_img = os.environ.get("SHOP_RESERVE_IMAGE_URL")
     reserve_url = os.environ.get("SHOP_RESERVE_URL") or (shop.get("reserve_url") or args.coupon_url)
 
@@ -940,14 +897,13 @@ def run_for_shop(shop: dict, *, args) -> None:
         save_weekly_state(state_path, st, last_mode=campaign_type)
 
 
-# ========= main =========
 def main():
     ap = argparse.ArgumentParser()
-    # daily_coupon互換の入口
-    ap.add_argument("--shops_yaml", default="shops.yaml", help="shops.yaml path")
+
+    # Cloud Run前提：repo内のデフォルトに合わせる
+    ap.add_argument("--shops_yaml", default="restaurant_ai_pro/config/shops.yaml", help="shops.yaml path")
     ap.add_argument("--shop_id", default=None, help="target shop id (e.g., shopA). if omitted, run all shops")
 
-    # 任意上書き（普段は shops.yaml を使う）
     ap.add_argument("--daily_csv", default=None)
     ap.add_argument("--outdir",    default=None)
     ap.add_argument("--menu_csv",  default=None)
