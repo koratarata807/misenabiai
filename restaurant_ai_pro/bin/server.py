@@ -44,7 +44,7 @@ def _patch_argv(argv: list[str]):
 
 # ===== lazy loaders =====
 def _load_daily():
-    mod = importlib.import_module("bin.daily_coupon_job")
+    mod = importlib.import_module("restaurant_ai_pro.bin.daily_coupon_job")
 
     # debug fingerprint
     try:
@@ -64,7 +64,7 @@ def _load_daily():
 
 
 def _load_weekly():
-    mod = importlib.import_module("bin.ai_weekly_line_campaign_onlyoneshop")
+    mod = importlib.import_module("restaurant_ai_pro.bin.ai_weekly_line_campaign_onlyoneshop")
 
     # debug fingerprint
     try:
