@@ -137,6 +137,7 @@ def sb_headers() -> dict:
         "Prefer": "resolution=merge-duplicates",
     }
 
+
 def sb_get(table: str, params: dict) -> list[dict]:
     supabase_url = os.environ.get("SUPABASE_URL")
     url = f"{supabase_url}/rest/v1/{table}"
@@ -144,6 +145,7 @@ def sb_get(table: str, params: dict) -> list[dict]:
     if r.status_code >= 300:
         raise RuntimeError(f"Supabase GET failed: {r.status_code} {r.text}")
     return r.json()
+
 
 def sb_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
     if not rows:
@@ -154,26 +156,35 @@ def sb_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
     if r.status_code >= 300:
         raise RuntimeError(f"Supabase UPSERT failed: {r.status_code} {r.text}")
 
+
 def make_week_key(ts: Optional[pd.Timestamp] = None) -> str:
     t = ts or pd.Timestamp.now(tz="Asia/Tokyo")
     iso = t.isocalendar()
     return f"{iso.year}W{int(iso.week):02d}"
 
+
 def make_campaign_id(shop_id: str, campaign_type: str) -> str:
     wk = make_week_key()
     return f"{shop_id}_{wk}_weekly_{campaign_type}"
 
+
+# ========= ここが修正点（line_user_id -> user_id） =========
 def fetch_weekly_recipients(shop_id: str) -> list[str]:
+    """
+    public.users.user_id を LINE の送信先IDとして扱う前提
+    HOT/WARM のみを抽出して返す
+    """
     rows = sb_get(
         "users",
         params={
-            "select": "line_user_id",
+            "select": "user_id",
             "shop_id": f"eq.{shop_id}",
             "segment": "in.(HOT,WARM)",
-            "line_user_id": "not.is.null",
+            "user_id": "not.is.null",
         },
     )
-    return [r.get("line_user_id") for r in rows if r.get("line_user_id")]
+    return [r.get("user_id") for r in rows if r.get("user_id")]
+
 
 def log_weekly_sends(
     *,
@@ -207,11 +218,13 @@ def ensure_dir(path: str) -> None:
     if path:
         os.makedirs(path, exist_ok=True)
 
+
 def read_lines(path: Optional[str]) -> list[str]:
     if not path or not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as f:
         return [ln.strip() for ln in f if ln.strip()]
+
 
 def now_iso() -> str:
     return dt.datetime.now().astimezone().isoformat(timespec="seconds")
@@ -230,6 +243,7 @@ def load_daily(csv_path: str) -> pd.DataFrame:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df.sort_values("date").reset_index(drop=True)
 
+
 @dataclass
 class WeeklySummary:
     start_date: pd.Timestamp
@@ -241,6 +255,7 @@ class WeeklySummary:
     dow_weak: Optional[int]
     trend_ratio: Optional[float]
     proposals: List[str]
+
 
 def analyze_week(daily: pd.DataFrame) -> WeeklySummary:
     if daily.empty:
@@ -296,6 +311,7 @@ def _apply_jp(ax):
     for lab in ax.get_xticklabels() + ax.get_yticklabels():
         lab.set_fontproperties(JP)
 
+
 def build_pdf(summary: WeeklySummary, daily: pd.DataFrame, out_pdf: str) -> None:
     ensure_dir(os.path.dirname(out_pdf))
     with PdfPages(out_pdf) as pdf:
@@ -347,6 +363,7 @@ def fetch_weather(city: Optional[str]) -> Optional[str]:
     except Exception:
         return None
 
+
 def is_bad_weather(main: Optional[str]) -> bool:
     if not main:
         return False
@@ -368,6 +385,7 @@ def _resolve_line_token_env(shop: dict) -> str:
         return f"LINE_TOKEN_{sid.upper()}"
     return "LINE_CHANNEL_ACCESS_TOKEN"
 
+
 def _get_line_token_from_shop_env(shop: dict) -> str:
     env_key = _resolve_line_token_env(shop)
     token = os.environ.get(env_key)
@@ -375,9 +393,11 @@ def _get_line_token_from_shop_env(shop: dict) -> str:
         raise RuntimeError(f"LINE token missing. env_key={env_key}")
     return token
 
+
 def _line_headers(shop: dict) -> dict:
     token = _get_line_token_from_shop_env(shop)
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
 
 def send_broadcast(shop: dict, messages: list[dict]) -> Tuple[int, int]:
     if os.environ.get("DISABLE_BROADCAST", "0") == "1":
@@ -388,6 +408,7 @@ def send_broadcast(shop: dict, messages: list[dict]) -> Tuple[int, int]:
         return (1, 0)
     print(f"[WARN] BROADCAST {r.status_code}: {r.text}")
     return (0, 1)
+
 
 def send_multicast(shop: dict, uids: Iterable[str], messages: list[dict], chunk: int = 500) -> Tuple[int, int]:
     ok = fail = 0
@@ -415,6 +436,7 @@ def send_multicast(shop: dict, uids: Iterable[str], messages: list[dict], chunk:
                     fail += 1
                     time.sleep(0.2)
     return (ok, fail)
+
 
 def send_messages_all_modes(
     shop: dict,
@@ -445,10 +467,12 @@ def load_state(path: str) -> dict:
     except Exception:
         return {}
 
+
 def save_state(path: str, obj: dict) -> None:
     ensure_dir(os.path.dirname(path))
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
+
 
 def passed_cooldown(state_path: str, hours: int) -> bool:
     if hours <= 0:
@@ -463,6 +487,7 @@ def passed_cooldown(state_path: str, hours: int) -> bool:
         return True
     delta = dt.datetime.now().astimezone() - last.astimezone()
     return (delta.total_seconds() >= hours * 3600)
+
 
 def load_weekly_state(state_path: str) -> dict:
     st = load_state(state_path)
@@ -479,6 +504,7 @@ def load_weekly_state(state_path: str) -> dict:
         st.setdefault("extra_sent_count", 0)
     return st
 
+
 def save_weekly_state(state_path: str, st: dict, *, last_mode: Optional[str] = None) -> None:
     st["last_broadcast_at"] = now_iso()
     if last_mode is not None:
@@ -494,6 +520,7 @@ def _strip_profit_info(menu_name: str) -> str:
     if cleaned in ("おすすめ", "おすすめメニュー", ""):
         return ""
     return cleaned
+
 
 def _build_menu_reason(menu_name: str, weather_main: Optional[str] = None) -> str:
     name = menu_name or ""
@@ -513,6 +540,7 @@ def _build_menu_reason(menu_name: str, weather_main: Optional[str] = None) -> st
     if any(k in name for k in ["プリン", "ケーキ", "パフェ", "アイス"]):
         return "食後のひと休みにぴったりなデザートメニューです。"
     return "素材の味わいを生かした、スタッフおすすめの一品です。"
+
 
 def decide_campaign_mode(ws: WeeklySummary, weather_main: Optional[str]) -> str:
     bad_weather = is_bad_weather(weather_main)
@@ -538,6 +566,7 @@ def decide_campaign_mode(ws: WeeklySummary, weather_main: Optional[str]) -> str:
         mode = "recovery"
     return mode
 
+
 EMOJI_DICT: Dict[str, list[str]] = {
     "headline": ["📣", "📢", "📌"],
     "value": ["🉐", "🔥", "✨"],
@@ -550,9 +579,12 @@ STYLE_CONFIG: Dict[str, Dict[str, Any]] = {
     "premium": {"tone": "premium", "use_strong_value": False},
     "family": {"tone": "soft", "use_strong_value": True},
 }
+
+
 def _pick_emoji(category: str) -> str:
     items = EMOJI_DICT.get(category) or []
     return random.choice(items) if items else ""
+
 
 def build_reserve_flex(image_url: str, reserve_url: str) -> dict:
     return {
@@ -570,6 +602,7 @@ def build_reserve_flex(image_url: str, reserve_url: str) -> dict:
             },
         },
     }
+
 
 def build_ai_campaign_message(
     ws: WeeklySummary,
@@ -634,7 +667,9 @@ def build_ai_campaign_message(
         menu_lines.append(f"{title_line}\n　{info_text}")
 
     food_emoji = _pick_emoji("food")
-    menu_block = f"【本日のおすすめ】{food_emoji}\n" + ("\n\n".join(menu_lines) if menu_lines else "・本日のおすすめをご用意しております。スタッフまでお尋ねください。")
+    menu_block = f"【本日のおすすめ】{food_emoji}\n" + (
+        "\n\n".join(menu_lines) if menu_lines else "・本日のおすすめをご用意しております。スタッフまでお尋ねください。"
+    )
 
     guide_block = (
         "🍽️ 本日のご案内\n"
@@ -678,6 +713,7 @@ def build_ai_campaign_message(
         blocks += ["", "\n".join(footer_lines)]
 
     return "\n".join(blocks)
+
 
 def build_owner_campaign_message(ws: WeeklySummary, ad, weather_main: Optional[str], campaign_mode: str, campaign_type: str) -> str:
     period = f"{ws.start_date.date()}〜{ws.end_date.date()}"
@@ -928,6 +964,7 @@ def main():
         print("=" * 80)
         print(f"[RUN] shop_id={shop.get('id')} name={shop.get('name')}")
         run_for_shop(shop, args=args)
+
 
 if __name__ == "__main__":
     main()
