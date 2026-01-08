@@ -4,6 +4,13 @@
 AI週報（PDF生成）＋ 顧客向け 自動販促（クーポン/おすすめ）
 (B案) Cloud Run前提：.envファイルは読まない。環境変数/Secretだけで完結させる。
 
+【今回の改良（完全版に統合済み）】
+- WEEKLY のクーポン内容を Supabase のテーブル駆動で切替
+  - weekly_campaigns: (shop_id, week_key) -> offer_key, variant_id
+  - coupon_variants : (offer_key, variant_id) -> message_text, coupon_url, image_url, enabled
+- campaign_id に offer_key / variant_id を含め、coupon_send_logs の集計を容易化
+- 顧客向け送信は「AI本文 + DB定義クーポン + (任意)予約Flex」の構成
+
 必要環境変数（共通/基盤）
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
@@ -13,22 +20,34 @@ AI週報（PDF生成）＋ 顧客向け 自動販促（クーポン/おすすめ
 - LINE_TOKEN_SHOPA / LINE_TOKEN_SHOPB / ...
 - SHOP_LOCATION（任意）
 - SHOP_STATION_MIN（任意）
-- WEEKLY_VARIANT_ID（任意）
+- WEEKLY_VARIANT_ID（任意：fallback用）
 - WEEKLY_ENABLE_BROADCAST（任意）
+- DISABLE_BROADCAST（任意：1で全体停止）
+- OWNER_RECIPIENTS（任意：店長向け送信先 userId を改行/カンマ区切りで渡す）
 """
 
 from __future__ import annotations
 
-import os, json, time, argparse, datetime as dt, re, random
+import os
+import json
+import time
+import argparse
+import datetime as dt
+import re
+import random
 from dataclasses import dataclass
 from typing import Optional, Iterable, List, Tuple, Dict, Any
+from pathlib import Path
 
 import pandas as pd
 import requests
 import yaml
 
-# 外部モジュール（あなたのパッケージ）
-from restaurant_ai.advisor import AdviceInput, generate_actionable_advice
+# ========= パッケージ内 import（揺れ吸収） =========
+try:
+    from restaurant_ai_pro.restaurant_ai.advisor import AdviceInput, generate_actionable_advice  # type: ignore
+except Exception:
+    from restaurant_ai.advisor import AdviceInput, generate_actionable_advice  # type: ignore
 
 # ========= Matplotlib（日本語フォント/Agg） =========
 import matplotlib
@@ -36,6 +55,14 @@ matplotlib.use("Agg")
 from matplotlib import rcParams, font_manager as fm
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+
+# ========= 実行位置に依存しないパス基準 =========
+THIS_FILE = Path(__file__).resolve()
+PKG_ROOT = THIS_FILE.parents[1]           # restaurant_ai_pro
+REPO_ROOT = THIS_FILE.parents[2]          # repo root（misenabiai など）
+
+# Cloud Run は /tmp が確実に書ける
+TMP_DIR = Path("/tmp")
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/ipaexfont/ipaexg.ttf",
@@ -55,7 +82,7 @@ else:
     rcParams["font.family"] = "DejaVu Sans"
 rcParams["axes.unicode_minus"] = False
 rcParams["pdf.fonttype"] = 42
-rcParams["ps.fonttype"]  = 42
+rcParams["ps.fonttype"] = 42
 
 # ========= 定数 =========
 LINE_PUSH_API       = "https://api.line.me/v2/bot/message/push"
@@ -75,24 +102,37 @@ def load_env_file(path: str, *, override: bool = True) -> None:
 
 # ========= shops.yaml loader =========
 def load_shops_yaml(path: str) -> list[dict]:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"shops.yaml not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
+    p = Path(path)
+
+    if not p.is_absolute():
+        cand = [
+            REPO_ROOT / p,
+            PKG_ROOT / p,
+        ]
+        for c in cand:
+            if c.exists():
+                p = c
+                break
+
+    if not p.exists():
+        raise FileNotFoundError(f"shops.yaml not found: {p}")
+
+    with open(p, "r", encoding="utf-8") as f:
         obj = yaml.safe_load(f)
+
     if isinstance(obj, dict) and "shops" in obj:
         shops = obj["shops"]
     elif isinstance(obj, list):
         shops = obj
     else:
         shops = obj
+
     if not isinstance(shops, list):
         raise ValueError("shops.yaml format error: expected list or {shops: [...]}")
 
-    # 互換：id/line_token_env が無い店は補完しておく
     for s in shops:
         sid = str(s.get("id") or "")
         if sid and not s.get("line_token_env"):
-            # shopA -> LINE_TOKEN_SHOPA
             s["line_token_env"] = f"LINE_TOKEN_{sid.upper()}"
     return shops
 
@@ -115,6 +155,7 @@ def export_shop_cfg_to_env(shop: dict) -> None:
         "address": "SHOP_ADDRESS",
         "hours": "SHOP_HOURS",
         "reserve_url": "SHOP_RESERVE_URL",
+        "reserve_image_url": "SHOP_RESERVE_IMAGE_URL",
         "city": "SHOP_CITY",
     }
     for k, envk in mapping.items():
@@ -126,10 +167,9 @@ def export_shop_cfg_to_env(shop: dict) -> None:
 
 # ========= Supabase REST =========
 def sb_headers() -> dict:
-    supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not supabase_url or not supabase_key:
-        raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です。")
+    if not supabase_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY が未設定です。")
     return {
         "apikey": supabase_key,
         "Authorization": f"Bearer {supabase_key}",
@@ -140,6 +180,8 @@ def sb_headers() -> dict:
 
 def sb_get(table: str, params: dict) -> list[dict]:
     supabase_url = os.environ.get("SUPABASE_URL")
+    if not supabase_url:
+        raise RuntimeError("SUPABASE_URL が未設定です。")
     url = f"{supabase_url}/rest/v1/{table}"
     r = requests.get(url, headers=sb_headers(), params=params, timeout=20)
     if r.status_code >= 300:
@@ -151,6 +193,8 @@ def sb_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
     if not rows:
         return
     supabase_url = os.environ.get("SUPABASE_URL")
+    if not supabase_url:
+        raise RuntimeError("SUPABASE_URL が未設定です。")
     url = f"{supabase_url}/rest/v1/{table}?on_conflict={on_conflict}"
     r = requests.post(url, headers=sb_headers(), json=rows, timeout=30)
     if r.status_code >= 300:
@@ -163,9 +207,65 @@ def make_week_key(ts: Optional[pd.Timestamp] = None) -> str:
     return f"{iso.year}W{int(iso.week):02d}"
 
 
-def make_campaign_id(shop_id: str, campaign_type: str) -> str:
+def make_campaign_id(shop_id: str, campaign_type: str, *, offer_key: str = "na", variant_id: str = "na") -> str:
     wk = make_week_key()
-    return f"{shop_id}_{wk}_weekly_{campaign_type}"
+    return f"{shop_id}_{wk}_weekly_{campaign_type}_{offer_key}_{variant_id}"
+
+
+# ========= (NEW) weekly_campaigns / coupon_variants 解決 =========
+def get_weekly_offer_for_week(shop_id: str, week_key: Optional[str] = None) -> Optional[dict]:
+    """
+    weekly_campaigns から「今週・この店舗で有効な施策」を1件取得
+    期待カラム: shop_id, week_key, offer_key, variant_id, enabled
+    """
+    wk = week_key or make_week_key()
+    rows = sb_get(
+        "weekly_campaigns",
+        params={
+            "select": "offer_key,variant_id,enabled",
+            "shop_id": f"eq.{shop_id}",
+            "week_key": f"eq.{wk}",
+            "enabled": "eq.true",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        return None
+    r = rows[0]
+    if not r.get("offer_key") or not r.get("variant_id"):
+        return None
+    return {
+        "week_key": wk,
+        "offer_key": str(r["offer_key"]),
+        "variant_id": str(r["variant_id"]),
+    }
+
+
+def get_coupon_variant(offer_key: str, variant_id: str) -> Optional[dict]:
+    """
+    coupon_variants から表現（文面/URL/画像）を取得
+    期待カラム: offer_key, variant_id, message_text, coupon_url, image_url, enabled
+    """
+    rows = sb_get(
+        "coupon_variants",
+        params={
+            "select": "offer_key,variant_id,message_text,coupon_url,image_url,enabled",
+            "offer_key": f"eq.{offer_key}",
+            "variant_id": f"eq.{variant_id}",
+            "enabled": "eq.true",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        return None
+    r = rows[0]
+    return {
+        "offer_key": str(r.get("offer_key", offer_key)),
+        "variant_id": str(r.get("variant_id", variant_id)),
+        "message_text": str(r.get("message_text") or "").strip(),
+        "coupon_url": str(r.get("coupon_url") or "").strip(),
+        "image_url": str(r.get("image_url") or "").strip(),
+    }
 
 
 # ========= ここが修正点（line_user_id -> user_id） =========
@@ -215,39 +315,70 @@ def log_weekly_sends(
 
 # ========= ユーティリティ =========
 def ensure_dir(path: str) -> None:
-    if path:
-        os.makedirs(path, exist_ok=True)
-
-
-def read_lines(path: Optional[str]) -> list[str]:
-    if not path or not os.path.exists(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [ln.strip() for ln in f if ln.strip()]
+    if not path:
+        return
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def now_iso() -> str:
     return dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def parse_recipients_env(val: Optional[str]) -> list[str]:
+    if not val:
+        return []
+    parts = re.split(r"[\s,]+", val.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def read_lines(path: Optional[str]) -> list[str]:
+    if not path:
+        return []
+    p = Path(path)
+    if not p.is_absolute():
+        cand = [REPO_ROOT / p, TMP_DIR / p, PKG_ROOT / p]
+        for c in cand:
+            if c.exists():
+                p = c
+                break
+    if not p.exists():
+        return []
+    with open(p, "r", encoding="utf-8") as f:
+        return [ln.strip() for ln in f if ln.strip()]
+
+
 # ========= データ読み込み／分析 =========
 def load_daily(csv_path: str) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
+    p = Path(csv_path)
+    if not p.is_absolute():
+        cand = [REPO_ROOT / p, PKG_ROOT / p]
+        for c in cand:
+            if c.exists():
+                p = c
+                break
+
+    if not p.exists():
+        raise FileNotFoundError(f"daily_csv not found: {p}")
+
+    df = pd.read_csv(p)
     if "date" not in df.columns or "sales" not in df.columns:
         raise ValueError("daily_csv に 'date','sales' 列が必要です。")
+
     df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
     if "dow" not in df.columns:
         df["dow"] = df["date"].dt.dayofweek
+
     for c in ["sales", "guests", "new_customers", "repeat_rate"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+
     return df.sort_values("date").reset_index(drop=True)
 
 
 @dataclass
 class WeeklySummary:
     start_date: pd.Timestamp
-    end_date:   pd.Timestamp
+    end_date: pd.Timestamp
     total_sales: float
     avg_day_sales: float
     total_guests: Optional[float]
@@ -261,13 +392,16 @@ def analyze_week(daily: pd.DataFrame) -> WeeklySummary:
     if daily.empty:
         today = pd.Timestamp.today().normalize()
         return WeeklySummary(today, today, 0.0, 0.0, None, None, None, None, ["データなし"])
+
     end = daily["date"].max().normalize()
     start = end - pd.Timedelta(days=6)
+
     this_w = daily[(daily["date"] >= start) & (daily["date"] <= end)].copy()
     prev_w = daily[(daily["date"] >= start - pd.Timedelta(days=7)) & (daily["date"] < start)].copy()
 
-    total_sales   = float(this_w["sales"].sum())
+    total_sales = float(this_w["sales"].sum())
     avg_day_sales = float(this_w.groupby(this_w["date"].dt.date)["sales"].sum().mean())
+
     total_guests = float(this_w["guests"].sum()) if "guests" in this_w.columns else None
 
     rr = None
@@ -278,19 +412,19 @@ def analyze_week(daily: pd.DataFrame) -> WeeklySummary:
             rr = float(s.mean())
 
     dow_sales = this_w.groupby("dow")["sales"].mean() if len(this_w) else pd.Series(dtype=float)
-    dow_weak  = int(dow_sales.idxmin()) if len(dow_sales) else None
+    dow_weak = int(dow_sales.idxmin()) if len(dow_sales) else None
 
     trend_ratio = None
     if len(prev_w) > 0 and prev_w["sales"].sum() > 0:
         trend_ratio = float(total_sales / prev_w["sales"].sum())
 
     props: List[str] = []
-    if trend_ratio and trend_ratio < 0.95:
+    if trend_ratio is not None and trend_ratio < 0.95:
         props.append("前週比マイナス：来店促進施策を強化（クーポン／SNS露出）")
     if dow_weak is not None:
-        jp = ["月","火","水","木","金","土","日"][dow_weak]
+        jp = ["月", "火", "水", "木", "金", "土", "日"][dow_weak]
         props.append(f"{jp}曜日が弱い傾向：当日限定割引やSNS投稿時間の見直し推奨")
-    if rr and rr < 0.4:
+    if rr is not None and rr < 0.4:
         props.append("リピート率低下：初回来店後1週間のフォロー配信を強化")
     if not props:
         props.append("全体は堅調：上位メニューの画像更新と口コミ返信の継続を推奨")
@@ -313,10 +447,15 @@ def _apply_jp(ax):
 
 
 def build_pdf(summary: WeeklySummary, daily: pd.DataFrame, out_pdf: str) -> None:
-    ensure_dir(os.path.dirname(out_pdf))
-    with PdfPages(out_pdf) as pdf:
+    outp = Path(out_pdf)
+    if not outp.is_absolute():
+        outp = TMP_DIR / outp
+    ensure_dir(str(outp.parent))
+
+    with PdfPages(outp) as pdf:
         fig = plt.figure(figsize=(8.27, 11.69))
         fig.text(0.10, 0.92, "AI週報（自動生成）", fontproperties=JP, fontsize=18, weight="bold")
+
         y = 0.86
         lines = [
             f"期間：{summary.start_date.date()}〜{summary.end_date.date()}",
@@ -330,10 +469,11 @@ def build_pdf(summary: WeeklySummary, daily: pd.DataFrame, out_pdf: str) -> None
         if summary.trend_ratio is not None:
             lines.append(f"前週比：{summary.trend_ratio*100:.1f}%")
         if summary.dow_weak is not None:
-            jp = ["月","火","水","木","金","土","日"][summary.dow_weak]
+            jp = ["月", "火", "水", "木", "金", "土", "日"][summary.dow_weak]
             lines.append(f"弱い曜日：{jp}曜日")
         lines.append("— 提案 —")
         lines += [f"・{p}" for p in summary.proposals]
+
         for ln in lines:
             fig.text(0.10, y, ln, fontproperties=JP, fontsize=12)
             y -= 0.04
@@ -348,6 +488,8 @@ def build_pdf(summary: WeeklySummary, daily: pd.DataFrame, out_pdf: str) -> None
         fig.autofmt_xdate()
         pdf.savefig(fig)
         plt.close(fig)
+
+    print(f"[INFO] PDF generated: {outp}", flush=True)
 
 
 # ========= 天気 =========
@@ -372,11 +514,6 @@ def is_bad_weather(main: Optional[str]) -> bool:
 
 # ========= LINE送信 =========
 def _resolve_line_token_env(shop: dict) -> str:
-    """
-    優先順位：
-      1) shops.yaml の line_token_env
-      2) shop_id から自動生成：LINE_TOKEN_{SHOPID}
-    """
     env_key = shop.get("line_token_env")
     if env_key:
         return str(env_key)
@@ -416,7 +553,7 @@ def send_multicast(shop: dict, uids: Iterable[str], messages: list[dict], chunk:
     headers = _line_headers(shop)
 
     for i in range(0, len(ids), chunk):
-        part = ids[i:i+chunk]
+        part = ids[i:i + chunk]
         payload = {"to": part, "messages": messages}
         r = requests.post(LINE_MULTICAST_API, headers=headers, json=payload, timeout=10)
         if r.status_code == 200:
@@ -457,20 +594,71 @@ def send_messages_all_modes(
     return (0, 0, "none")
 
 
+# ========= Flex（予約/クーポン） =========
+def build_reserve_flex(image_url: str, reserve_url: str) -> dict:
+    return {
+        "type": "flex",
+        "altText": "ご予約はこちら",
+        "contents": {
+            "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": image_url,
+                "size": "full",
+                "aspectRatio": "20:13",
+                "aspectMode": "cover",
+                "action": {"type": "uri", "label": "予約はこちら", "uri": reserve_url},
+            },
+        },
+    }
+
+
+def build_coupon_flex(image_url: str, coupon_url: str, title: str = "クーポンはこちら") -> dict:
+    return {
+        "type": "flex",
+        "altText": title,
+        "contents": {
+            "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": image_url,
+                "size": "full",
+                "aspectRatio": "20:13",
+                "aspectMode": "cover",
+                "action": {"type": "uri", "label": title, "uri": coupon_url},
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": title, "weight": "bold", "size": "lg"},
+                    {"type": "text", "text": "タップで開きます", "size": "sm", "color": "#888888"},
+                ],
+            },
+        },
+    }
+
+
 # ========= 状態（週次カウンタ） =========
 def load_state(path: str) -> dict:
-    if not os.path.exists(path):
+    p = Path(path)
+    if not p.is_absolute():
+        p = TMP_DIR / p
+    if not p.exists():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
 
 
 def save_state(path: str, obj: dict) -> None:
-    ensure_dir(os.path.dirname(path))
-    with open(path, "w", encoding="utf-8") as f:
+    p = Path(path)
+    if not p.is_absolute():
+        p = TMP_DIR / p
+    ensure_dir(str(p.parent))
+    with open(p, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
 
@@ -584,24 +772,6 @@ STYLE_CONFIG: Dict[str, Dict[str, Any]] = {
 def _pick_emoji(category: str) -> str:
     items = EMOJI_DICT.get(category) or []
     return random.choice(items) if items else ""
-
-
-def build_reserve_flex(image_url: str, reserve_url: str) -> dict:
-    return {
-        "type": "flex",
-        "altText": "ご予約はこちら",
-        "contents": {
-            "type": "bubble",
-            "hero": {
-                "type": "image",
-                "url": image_url,
-                "size": "full",
-                "aspectRatio": "20:13",
-                "aspectMode": "cover",
-                "action": {"type": "uri", "label": "予約はこちら", "uri": reserve_url},
-            },
-        },
-    }
 
 
 def build_ai_campaign_message(
@@ -748,28 +918,44 @@ def build_owner_campaign_message(ws: WeeklySummary, ad, weather_main: Optional[s
 
 # ========= 実行（店舗単位） =========
 def run_for_shop(shop: dict, *, args) -> None:
-    # 1) (B案) env_fileは読まない（関数自体がno-op）
     env_file = shop.get("env_file")
     if env_file:
         load_env_file(env_file, override=True)
 
-    # 2) shops.yaml の情報を env に注入（文面用）
     export_shop_cfg_to_env(shop)
 
-    # 3) 入力パス確定（引数優先→shop設定）
     daily_csv = args.daily_csv or shop.get("daily_csv")
-    outdir = args.outdir or shop.get("outdir") or f"OUTPUT/{shop.get('id','shop')}"
-    city = args.city or shop.get("city") or os.environ.get("SHOP_CITY")
-
     if not daily_csv:
         raise ValueError("daily_csv is required (args.daily_csv or shop.daily_csv)")
-    ensure_dir(outdir)
+
+    outdir = args.outdir or shop.get("outdir")
+    if not outdir:
+        outdir = str(TMP_DIR / "OUTPUT" / str(shop.get("id", "shop")))
+    outdir_p = Path(outdir)
+    if not outdir_p.is_absolute():
+        outdir_p = TMP_DIR / outdir_p
+    ensure_dir(str(outdir_p))
+
+    city = args.city or shop.get("city") or os.environ.get("SHOP_CITY")
 
     daily = load_daily(daily_csv)
     ws = analyze_week(daily)
 
-    menu_path = args.menu_csv or shop.get("menu_csv") or os.path.join(os.path.dirname(daily_csv), "menu.csv")
-    menu_df = pd.read_csv(menu_path) if (menu_path and os.path.exists(menu_path)) else None
+    menu_path = args.menu_csv or shop.get("menu_csv")
+    if not menu_path and daily_csv:
+        menu_path = str(Path(daily_csv).resolve().parent / "menu.csv")
+
+    menu_df = None
+    if menu_path:
+        mp = Path(menu_path)
+        if not mp.is_absolute():
+            cand = [REPO_ROOT / mp, PKG_ROOT / mp, Path(daily_csv).resolve().parent / mp]
+            for c in cand:
+                if c.exists():
+                    mp = c
+                    break
+        if mp.exists():
+            menu_df = pd.read_csv(mp)
 
     weather_main = fetch_weather(city) if city else None
 
@@ -793,10 +979,9 @@ def run_for_shop(shop: dict, *, args) -> None:
     )
     ad = generate_actionable_advice(inp)
 
-    pdf_path = os.path.join(outdir, "weekly_report.pdf")
+    pdf_path = str(outdir_p / "weekly_report.pdf")
     build_pdf(ws, daily, pdf_path)
 
-    # 店長向け（任意）
     headline = (
         f"📊 AI週報\n期間：{ws.start_date.date()}〜{ws.end_date.date()}\n"
         f"総売上：¥{ws.total_sales:,.0f}\n日平均：¥{ws.avg_day_sales:,.0f}\n"
@@ -805,11 +990,15 @@ def run_for_shop(shop: dict, *, args) -> None:
         headline += f"前週比：{ws.trend_ratio*100:.1f}%\n"
     headline += "\n— 提案 —\n" + "\n".join([f"・{p}" for p in ws.proposals])
 
-    owner_recipients = read_lines(args.recipients)
+    owner_recipients = []
+    if args.owner_recipients_env:
+        owner_recipients = parse_recipients_env(os.environ.get(args.owner_recipients_env))
+    if not owner_recipients and args.recipients_file:
+        owner_recipients = read_lines(args.recipients_file)
 
     if args.dry_run:
         print(f"[DRY] shop_id={shop.get('id')} pdf={pdf_path}")
-        print("[DRY] WEEKLY_HEADLINE:", headline)
+        print("[DRY] WEEKLY_HEADLINE:\n", headline)
 
     if not (args.only_coupon or args.no_weekly_message):
         if owner_recipients:
@@ -826,18 +1015,30 @@ def run_for_shop(shop: dict, *, args) -> None:
         else:
             print("[INFO] owner recipients not set; skip owner headline")
 
-    # 顧客向けは only_coupon/no_weekly_message の時だけ
     if not (args.only_coupon or args.no_weekly_message):
         return
 
     shop_id = str(shop.get("id") or os.environ.get("SHOP_ID") or "shopA")
-    variant_id = os.environ.get("WEEKLY_VARIANT_ID", "A")
+
+    # --- (NEW) 今週のWEEKLY施策をSupabaseから解決 ---
+    wk_row = get_weekly_offer_for_week(shop_id)
+    if wk_row is None:
+        offer_key = "fallback"
+        variant_id = os.environ.get("WEEKLY_VARIANT_ID", "A")
+        variant = None
+        print(f"[WARN] weekly_campaigns not found. fallback variant_id={variant_id}", flush=True)
+    else:
+        offer_key = wk_row["offer_key"]
+        variant_id = wk_row["variant_id"]
+        variant = get_coupon_variant(offer_key, variant_id)
+        if variant is None:
+            print(f"[WARN] coupon_variants not found/disabled. offer_key={offer_key} variant_id={variant_id}", flush=True)
 
     weekly_recipients = fetch_weekly_recipients(shop_id)
     print(f"[INFO] weekly recipients(HOT/WARM): {len(weekly_recipients)} shop_id={shop_id}")
 
-    state_dir = args.state_dir or ".state"
-    state_path = os.path.join(state_dir, f"weekly_{shop_id}.json")
+    state_dir = args.state_dir or str(TMP_DIR / ".state")
+    state_path = str(Path(state_dir) / f"weekly_{shop_id}.json")
     st = load_weekly_state(state_path)
 
     cooldown_hours = int(args.cooldown_hours or shop.get("cooldown_hours") or 24)
@@ -846,7 +1047,7 @@ def run_for_shop(shop: dict, *, args) -> None:
         return
 
     regular_sent = int(st.get("regular_sent_count", 0))
-    extra_sent   = int(st.get("extra_sent_count", 0))
+    extra_sent = int(st.get("extra_sent_count", 0))
 
     today = pd.Timestamp.today()
     weekday = today.dayofweek
@@ -854,9 +1055,9 @@ def run_for_shop(shop: dict, *, args) -> None:
     is_weekend_regular = (weekday == 4)
 
     threshold = float(args.threshold if args.threshold is not None else shop.get("threshold", 0.95))
-    weak_today   = (ws.dow_weak is not None and weekday == ws.dow_weak)
-    bad_weather  = is_bad_weather(weather_main)
-    bad_sales    = (ws.trend_ratio is not None and ws.trend_ratio < threshold)
+    weak_today = (ws.dow_weak is not None and weekday == ws.dow_weak)
+    bad_weather = is_bad_weather(weather_main)
+    bad_sales = (ws.trend_ratio is not None and ws.trend_ratio < threshold)
     is_extra_condition = (bad_weather or weak_today or bad_sales)
 
     campaign_type: Optional[str] = None
@@ -869,7 +1070,7 @@ def run_for_shop(shop: dict, *, args) -> None:
         print("[INFO] campaign not triggered (weekly limits / conditions).")
         return
 
-    campaign_id = make_campaign_id(shop_id, campaign_type)
+    campaign_id = make_campaign_id(shop_id, campaign_type, offer_key=offer_key, variant_id=variant_id)
     campaign_mode = decide_campaign_mode(ws, weather_main)
 
     ai_message = build_ai_campaign_message(ws, ad, weather_main, campaign_mode, campaign_type, menu_df=menu_df)
@@ -877,10 +1078,21 @@ def run_for_shop(shop: dict, *, args) -> None:
 
     weekly_enable_broadcast = os.environ.get("WEEKLY_ENABLE_BROADCAST", "0") == "1"
 
+    coupon_text = None
+    coupon_url = None
+    coupon_image = None
+    if variant:
+        coupon_text = variant.get("message_text") or None
+        coupon_url = variant.get("coupon_url") or None
+        coupon_image = variant.get("image_url") or None
+
     if args.dry_run:
-        print(f"[DRY] campaign_id={campaign_id} type={campaign_type} variant={variant_id}")
-        print("[DRY] OWNER_CAMPAIGN:", owner_message)
-        print("[DRY] CUSTOMER_CAMPAIGN:", ai_message)
+        print(f"[DRY] campaign_id={campaign_id} type={campaign_type} offer={offer_key} variant={variant_id}")
+        print("[DRY] OWNER_CAMPAIGN:\n", owner_message)
+        print("[DRY] CUSTOMER_AI:\n", ai_message)
+        print("[DRY] COUPON_TEXT:\n", coupon_text)
+        print("[DRY] COUPON_URL:", coupon_url)
+        print("[DRY] COUPON_IMAGE:", coupon_image)
         return
 
     # 1) 店長/オーナー（任意）
@@ -893,11 +1105,17 @@ def run_for_shop(shop: dict, *, args) -> None:
         )
         print(f"[SUMMARY] owner_campaign({campaign_type}): ok={ok_o} fail={fail_o} mode={mode_o}")
 
-    # 2) 顧客
+    # 2) 顧客メッセージ（AI本文 + DBクーポン + 予約導線）
+    messages: list[dict] = [{"type": "text", "text": ai_message}]
+
+    if coupon_text:
+        messages.append({"type": "text", "text": coupon_text})
+
+    if coupon_image and coupon_url:
+        messages.append(build_coupon_flex(coupon_image, coupon_url, title="クーポンはこちら"))
+
     reserve_img = os.environ.get("SHOP_RESERVE_IMAGE_URL")
     reserve_url = os.environ.get("SHOP_RESERVE_URL") or (shop.get("reserve_url") or args.coupon_url)
-
-    messages = [{"type": "text", "text": ai_message}]
     if reserve_img and reserve_url:
         messages.append(build_reserve_flex(reserve_img, reserve_url))
 
@@ -936,33 +1154,46 @@ def run_for_shop(shop: dict, *, args) -> None:
 def main():
     ap = argparse.ArgumentParser()
 
-    # Cloud Run前提：repo内のデフォルトに合わせる
     ap.add_argument("--shops_yaml", default="restaurant_ai_pro/config/shops.yaml", help="shops.yaml path")
     ap.add_argument("--shop_id", default=None, help="target shop id (e.g., shopA). if omitted, run all shops")
 
     ap.add_argument("--daily_csv", default=None)
-    ap.add_argument("--outdir",    default=None)
-    ap.add_argument("--menu_csv",  default=None)
-    ap.add_argument("--city",      default=None)
+    ap.add_argument("--outdir", default=None)
+    ap.add_argument("--menu_csv", default=None)
+    ap.add_argument("--city", default=None)
 
-    ap.add_argument("--recipients", default=None, help="店長向けテスト配信（userId行区切り）")
+    ap.add_argument("--owner_recipients_env", default="OWNER_RECIPIENTS",
+                    help="owner recipients userIds stored in env (newline/comma separated)")
+    ap.add_argument("--recipients_file", default=None,
+                    help="(legacy) owner recipients file path (one userId per line)")
+
     ap.add_argument("--coupon_url", default="https://lin.ee/coupon")
 
-    ap.add_argument("--threshold", type=float, default=None, help="前週比の閾値（未指定なら shops.yaml の threshold or 0.95）")
-    ap.add_argument("--only_coupon", action="store_true", help="顧客向けモード：販促のみ（週報テキストは送らない）")
-    ap.add_argument("--no_weekly_message", action="store_true", help="週報テキストを抑止（PDFは生成）")
+    ap.add_argument("--threshold", type=float, default=None,
+                    help="前週比の閾値（未指定なら shops.yaml の threshold or 0.95）")
+    ap.add_argument("--only_coupon", action="store_true",
+                    help="顧客向けモード：販促のみ（週報テキストは送らない）")
+    ap.add_argument("--no_weekly_message", action="store_true",
+                    help="週報テキストを抑止（PDFは生成）")
 
-    ap.add_argument("--cooldown_hours", type=int, default=None, help="最低何時間は再配信しないか（未指定なら shops.yaml cooldown_hours or 24）")
-    ap.add_argument("--state_dir", default=".state", help="配信状態の保存先")
+    ap.add_argument("--cooldown_hours", type=int, default=None,
+                    help="最低何時間は再配信しないか（未指定なら shops.yaml cooldown_hours or 24）")
+
+    ap.add_argument("--state_dir", default=str(TMP_DIR / ".state"), help="配信状態の保存先")
     ap.add_argument("--dry_run", action="store_true", help="送信せずログのみ")
     args = ap.parse_args()
+
+    print("[BOOT] cwd =", os.getcwd(), flush=True)
+    print("[BOOT] file =", str(THIS_FILE), flush=True)
+    print("[BOOT] repo_root =", str(REPO_ROOT), flush=True)
+    print("[BOOT] pkg_root  =", str(PKG_ROOT), flush=True)
 
     shops = load_shops_yaml(args.shops_yaml)
     targets = [pick_shop(shops, args.shop_id)] if args.shop_id else shops
 
     for shop in targets:
-        print("=" * 80)
-        print(f"[RUN] shop_id={shop.get('id')} name={shop.get('name')}")
+        print("=" * 80, flush=True)
+        print(f"[RUN] shop_id={shop.get('id')} name={shop.get('name')}", flush=True)
         run_for_shop(shop, args=args)
 
 
